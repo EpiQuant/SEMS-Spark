@@ -15,3 +15,11 @@ Let's make the output of the parsers be in the following format:
 It may be best to define a case class instead of dealing with these tuples:
 
 case class ParsedInput(orderedSampleNames: Vector[String], snpInfo: Vector[(String, Vector[Double])])
+
+## Notes on LinearRegression
+The Class Jacob is using to conduct the regression is simply called org.apache.spark.ml.LinearRegression
+https://spark.apache.org/docs/2.0.1/api/java/org/apache/spark/ml/regression/LinearRegression.html
+
+It produces an object of class org.apache.spark.ml.LinearRegressionModel
+https://spark.apache.org/docs/2.0.1/api/java/org/apache/spark/ml/regression/LinearRegressionModel.html
+
