@@ -1,5 +1,7 @@
 import scala.io.Source
 import scala.annotation.tailrec
+import scala.collection.mutable.HashSet
+import scala.collection.parallel.ParSeq
 import org.apache.spark.ml.regression._
 import org.apache.spark._
 import org.apache.spark.sql._
@@ -8,6 +10,17 @@ import org.apache.spark.ml.feature.VectorAssembler
 
 import org.apache.spark.ml.feature.SQLTransformer
 import org.apache.spark.ml.regression._
+
+case class RegressionOutput(model: LinearRegressionModel,
+                            featureNames: Array[String],
+                            newestTermsPValue: Double,
+                            newestTermsName: String
+                           )
+
+case class StepCollections(not_added: HashSet[String],
+                           added_prev: HashSet[String] = HashSet(),
+                           skipped: HashSet[String] = HashSet()
+                          )
 
 object DataFramePrototype {
   
@@ -55,7 +68,7 @@ object DataFramePrototype {
     return (names_values.toVector, names) 
   }
   
-  def createSchema(sorted_snp_names: Array[String]): StructType = {
+  private[this] def createSchema(sorted_snp_names: Array[String]): StructType = {
     
     val SNP_headers = sorted_snp_names.map(name => (StructField(name, DoubleType, nullable = true))).toList
     
@@ -66,7 +79,7 @@ object DataFramePrototype {
     return schema
   }
   
-  def createRow(sample_names_order: Vector[String],
+  private[this] def createRow(sample_names_order: Vector[String],
                 sample_position: Int,
                 sorted_snp_names: Array[String],
                 inputRDD: rdd.RDD[(String, Vector[Double])]
@@ -86,7 +99,7 @@ object DataFramePrototype {
     return output
   }
   
-    def createDataFrame(session: SparkSession, inputRDD: rdd.RDD[(String, Vector[Double])], 
+  def createDataFrame(session: SparkSession, inputRDD: rdd.RDD[(String, Vector[Double])], 
                       sample_names_order: Vector[String]
       ): DataFrame = {
     
@@ -94,7 +107,6 @@ object DataFramePrototype {
     val sorted_SNP_names = inputRDD.keys.collect.sorted
     
     val schema = createSchema(sorted_SNP_names)
-    println(schema)
     /* 
      * NOTE: This involves an iterative loop with a side effect (reassignment to a true variable)
      */
@@ -112,7 +124,7 @@ object DataFramePrototype {
     return rowRDD
   }
   
-  def addPair(pair: (String, String), df:DataFrame): DataFrame = {
+  private[this] def addPair(pair: (String, String), df:DataFrame): DataFrame = {
     val col1 = pair._1
     val col2 = pair._2
     
@@ -150,65 +162,125 @@ object DataFramePrototype {
       addPairwiseCombinations(updated_df, updated_pairs)      
     }
   }
-    
-  def performRegression(features: List[String], df: DataFrame, label_col: String): LinearRegressionModel = {
-    val features_name = "features(" + features.mkString(",") + ")"
 
-    val assembler = new VectorAssembler().setInputCols(features.toArray).setOutputCol(features_name)
+  def performRegression(features: Array[String], df: DataFrame, label_col: String): RegressionOutput = {
         
+    val features_name = "features(" + features.mkString(",") + ")"
+    
+    val assembler = new VectorAssembler().setInputCols(features).setOutputCol(features_name)
+    
     val output = assembler.transform(df)
     
-    val lr = new LinearRegression().setLabelCol(label_col).setFeaturesCol(features_name)
+    output.show()
+    
+    val lr = new LinearRegression()
+                 .setLabelCol(label_col)
+                 .setFeaturesCol(features_name)
+
     val reg = lr.fit(output)
-    return reg
+    
+    reg.summary.pValues.foreach(x => print(x + ", "))
+    println()
+    val newTermsPValue = reg.summary.pValues(features.length - 1)
+    
+    
+    return RegressionOutput(model = reg,
+                            featureNames = features,
+                            newestTermsPValue = newTermsPValue,
+                            newestTermsName = features(features.length - 1)
+                           )
+  }
+    
+  def mapFunction(collections: StepCollections,
+                  full_df: DataFrame,
+                  phenotype: String
+                 ): ParSeq[RegressionOutput] = {
+    full_df.show()
+   // In this implementation, the function is mapped to a collection on the
+   //   driver node in a parallel fashion.
+   println("collections not added size: " + collections.not_added.size)
+   val reg_outputs = collections.not_added.toSeq.par.map(x => {
+     // New value always added to the end of the features collection
+      val features = collections.added_prev.toArray :+ x
+      performRegression(features, full_df, phenotype)
+    })
+    return reg_outputs
   }
   
-  def performSteps(spark: SparkSession, added_prev: List[String], possible: Array[String],
-                   skipped: List[String], df: DataFrame, phenotype: String,
-                   previous_regression: LinearRegressionModel
-                  ): LinearRegressionModel = {
-    /* 
-     * added_prev: the SNPs that are already included in the model
-     * possible: the SNPs that may still be added to the model
-     * skipped: SNPs that were removed in the previous step will not be considered in this iteration
-     * df: The data frame that contains the SNPs and phenotypes
-     */ 
-    val best_regression = spark.sparkContext.parallelize(possible).map( x => {
-      val features = x :: added_prev
-      performRegression(features, df, phenotype)
-      // The SNP under testing will have its p-value in the zeroth position, get the minimum
-    }).reduce((y, z) => if (y.summary.pValues(0) <= z.summary.pValues(0)) y else z)
-    
-    // Now that the regressions are finished for this iteration, add the skipped back into the consideration
-    // category for next time
-   // val new_possible = 
-    
-    val reg_pValues = best_regression.summary.pValues
-    
-    if (reg_pValues(0) >= threshold) {
-      // The model building is completed
-      return previous_regression
+  def reduceFunction(regression_outputs: ParSeq[RegressionOutput]): RegressionOutput = {
+    regression_outputs.reduce((x, y) => {
+      // The last p-value will be the one for the intercept. We always want the p-value linked to the last
+      // term to be added to the model, which is the second to last p-value
+      val xPValues = x.model.summary.pValues
+      val xPValue = xPValues(xPValues.length - 2)
+      
+      val yPValues = y.model.summary.pValues
+      val yPValue = yPValues(yPValues.length - 2)
+      
+      if (xPValue <= yPValue) x else y
+    })
+  }
+  
+  def constructNamePValuePairs(reg: RegressionOutput): IndexedSeq[(String, Double)] = {
+    val map = for (i <- 0 until reg.featureNames.length) yield {
+      (reg.featureNames(i), reg.model.summary.pValues(i))
     }
-    else {
-      // First, include it in the model and remove it from the 'possible' category
-      val new_model =  :: model
-      
-      
-      /*
-       * Check whether any of the previously included terms are no longer significant
-       * If so, remove them from the model and leave them out of the next iteration (but bring them back
-       * into consideration later)
-       */ 
-      // Ignore the first and the last p-values: the first is the one that was just added, and the last is
-      // the intercept: there should be a correspondence between the "added_previously" array and the p-values
-      // being looped through here
-      for (i <- 1 until (reg_pValues.length - 1) ) {
-        if (reg_pValues(i) >= threshold) {
-          // remove from model, and put it in the 'skipped' list
-        }
+    map
+  }
+  
+  @tailrec
+  def performSteps(spark: SparkSession,
+                   df: DataFrame,
+                   phenotype: String,
+                   collections: StepCollections,
+                   prev_best_model: RegressionOutput = null
+                   ): RegressionOutput = {
+    /*
+     *  Step 1: find the best regression for those SNPs still under consideration
+     */
+    // Map generates all of the regression outputs, and reduce finds the best one
+    val bestRegression = reduceFunction(mapFunction(collections, df, phenotype))
+    val pValues = bestRegression.model.summary.pValues
+        
+    // If the p-value of the newest term does not meet the threshold, return the prev_best_model
+    if (bestRegression.newestTermsPValue >= threshold) {
+      if (prev_best_model != null) {
+        return prev_best_model
+      }
+      else {
+        throw new Exception("No terms could be added to the model at a cutoff of " + threshold)
       }
     }
-  
+    else {
+      val new_collections = collections.copy()
+      /*
+       * Remove the newest term from the not_added category and put it in the added_prev category
+       */
+      new_collections.not_added.remove(bestRegression.newestTermsName)
+      new_collections.added_prev.add(bestRegression.newestTermsName)
+      
+      /*
+       * Step 2: Check to make sure none of the previously added terms are no longer significant
+       * 				 If they are, remove them from consideration in the next round (put them in skipped) and
+       *         take them out of the model
+       */
+      val namePValuePairs = constructNamePValuePairs(bestRegression)
+      namePValuePairs.foreach(pair => {
+        if (pair._2 >= threshold) {
+          // Remove this term from the prev_added collection, and move it to the skipped category
+          new_collections.added_prev.remove(pair._1)
+          new_collections.skipped.add(pair._1)
+        }
+      })
+      
+      if (new_collections.not_added.size == 0) {
+        // No more terms that could be added. Return the current best model
+        return bestRegression
+      }
+      else {
+        performSteps(spark, df, phenotype, new_collections, bestRegression) 
+      }
+    }
   }
   
   def main(args: Array[String]) = {
@@ -221,6 +293,7 @@ object DataFramePrototype {
      *  Define spark session
      */
     val spark = SparkSession.builder.master("local").appName("Epistasis").getOrCreate()
+    spark.sparkContext.setLogLevel("WARN")
  
     /*
      *  Parse the input files
@@ -228,7 +301,6 @@ object DataFramePrototype {
     val SNPdata = parseInputFileWithSampleNames(SNP_file)
     val phenoData = parseInputFileWithSampleNames(pheno_file)
     
-
     /* Original SNPs
      * This is the same data used in the scala key-value association defined in the broadSNP variable,
      *   only now these are distributed across the cluster, i.e., it is a Spark key-value association, not
@@ -241,19 +313,38 @@ object DataFramePrototype {
     val pheno_df = createDataFrame(spark, phenotypes, phenoData._2)
     
     val pairs = createPairwiseList(snp_df)
-    
     val full_df = addPairwiseCombinations(snp_df, pairs)
-        
-    val pheno_SNP_df = full_df.join(pheno_df, "Samples").persist()
-    pheno_SNP_df.show()
     
-    val reg = performRegression(Array("SNP1_SNP3"), pheno_SNP_df, "PH1")
-    reg.summary.objectiveHistory.foreach(println)
-    reg.summary.pValues.foreach(println)
-    println(reg.summary.featuresCol)
-     
+    // Dataframe is made persistent
+    val pheno_SNP_df = full_df.join(pheno_df, "Samples").persist()
+    
+    val phenotype = phenoData._1(0)._1
+    
+    val snp_names = SNPdata._1.map(x => x._1)
+    
+    val not_added_init = HashSet() ++ snp_names
+        
+    val initial_collection = new StepCollections(not_added = not_added_init)
+        
+    val mapTest = mapFunction(initial_collection, pheno_SNP_df, phenotype) 
+    
+    /*mapTest.toSeq.foreach(x => {
+      for (i <- 0 until x.featureNames.length) {
+        println(x.featureNames(i) + ",")
+        println(x.model.summary.pValues(i))
+      }
+    })
+    
+    val redTest = reduceFunction(mapTest)
+    redTest.featureNames.foreach(println)
+    println(redTest.model.summary.pValues(0))
+    
+    */
+    threshold = 0.05
+    
+    val stepsTest = performSteps(spark, pheno_SNP_df, phenotype, initial_collection, null)
+    stepsTest.featureNames.foreach(println)
+    
+    
   }
-  
-  
-  
 }
