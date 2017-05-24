@@ -1,4 +1,3 @@
-package Test
 
 import scopt.OptionParser
 import scala.io.Source
@@ -82,79 +81,67 @@ object Parser {
     val filtered = zipped.filterNot(x => cols.contains(x._2))
     return filtered.map(x => x._1)
   }
-  
-  
   def main(args: Array[String]){
-    val spark = SparkSession
+      val spark = SparkSession
       .builder()
       .appName("Parser")
       .master("local")
       .getOrCreate()
       
-// For implicit conversions like converting RDDs to DataFrames
-    import spark.implicits._
-    val data: Vector[String] = Source.fromFile("resources/sampleSNP.txt").getLines().toVector
-    val zdata: Vector[Vector[String]] = data.map(x => x.split("\t").toVector)
-    /* store the header row/column*/
-    var header_column = zdata.map(x => x(0))
-    var header_row = zdata(0)
-    
-    /* Get rid of the first row */
-    val zdata2 = zdata.filter(x => x!=header_row)          //filter out header  
-    
-    /* Get rid of first column and Change to Double */
-    val ddata = for (i <- 0 until zdata2.length) yield {
-      filterColumn(zdata2(i), Array(0), 1).map(x => StrToDouble(x).getOrElse(i+1.0))
-    }
-    
-    /* Delete first entry in header row/column to match ddata */
-    header_row = header_row.filter(x => x != header_row(0))
-    header_column = header_column.filter(x => x != header_column(0))
-    
-    var fdata = ddata
-    /* Command-Line Dependent */
-    val temp = args(0).split(" ")  
-    val vcols = for (string <- temp) yield {
+     val temp = args(0).split(" ")  
+     val vcols = for (string <- temp) yield {
       string.toInt-1
-    }
-    /* filter out the unecessary columns as supplied in the main arguments */
-    val filtered = for (i <- 0 until ddata.length) yield {
-      filterColumn(ddata(i).toVector, vcols)
-    }
-    header_row = filterColumn(header_row, vcols, 0)
-    fdata = filtered
-
-    /* transpose the data if necessary */
-    val transposed = fdata.transpose
-    println("Transpose: ")
-    fdata = transposed.map(x => x.toVector)
- 
-    val rowRDD =   //turn data into Rows
-      spark.sparkContext.parallelize(fdata).map(attributes => Row.fromSeq(attributes))
-    
+     }
       
-    //val schema = StructType(header.split("\t")     //build schema
-    // .map(fieldName => StructField(fieldName, DoubleType, nullable = false)))
-    val schema = StructType(header_column     //build schema
-      .map(fieldName => StructField(fieldName, DoubleType, nullable = false)))
+      val snp = CreateDataframe(spark, "resources/sampleSNP.txt", true, vcols)
+       snp.createOrReplaceTempView("Epitasis")
+      snp.show()
+     
+      val phe = CreateDataframe(spark, "resources/sampleData.txt", false, null)
+      phe.show()
+      
+  }
+  
+  def CreateDataframe(spark: SparkSession, file: String, t: Boolean, rmCols: Array[Int]): DataFrame = {
 
-    val dataframe = spark.createDataFrame(rowRDD, schema) //create Dataframe
-    //dataframe.createOrReplaceTempView("Epitasis")
-    //dataframe.show()
-
-    val broadcastVar = spark.sparkContext.broadcast(dataframe)
-    val training = spark.read.format("libsvm")
-  .load("data/mllib/sample_linear_regression_data.txt")
-
-val lr = new LinearRegression()
-  .setMaxIter(10)
-  .setRegParam(0.3)
-  .setElasticNetParam(0.8)
-
-// Fit the model
-val lrModel = lr.fit(training)
-
+    val data: Vector[String] = Source.fromFile(file).getLines().toVector
+    val splitLines: Vector[Vector[String]] = data.map(x => x.split("\t").toVector)
     
+    var finalData: IndexedSeq[IndexedSeq[Any]] = splitLines
     
+    /* filter out the unnecessary columns as supplied in the main arguments */
+    if(rmCols != null){
+      val filtered = for (i <- 0 until splitLines.length) yield {
+        filterColumn(splitLines(i).toVector, rmCols, 0)
+      }
+      finalData = filtered
+    }
+    /* transpose the data if necessary */
+    if(t == true){
+      val transposed = finalData.transpose
+      finalData = transposed
+    }
+    
+    /* filter out header row */
+    val filtered = finalData.slice(1, finalData.length)
+    
+    /* turn filtered data into Rows, where in each Row 
+     * the first element is a String (the distinct identifier for individuals) 
+     * followed by Doubles (actual data for each SNP)
+     */
+    val rowRDD = spark.sparkContext.parallelize(filtered)
+      .map({attributes => 
+          Row.fromSeq(attributes(0).toString() 
+          +: attributes.slice(1, attributes.length).map(x=>x.toString().toDouble))
+          })
+            
+    /* build schema: the first column is of StringType and the rest of columns are DoubleType
+     * corresponding to the RDD of Rows int the previous step
+     */
+    val schema = StructType(finalData(0)     
+      .map(fieldName => StructField(fieldName.toString(), if(fieldName == finalData(0)(0)) StringType else DoubleType, nullable = false)))
+    
+    /* create DataFrame from the RDD of Rows and schema */  
+    spark.createDataFrame(rowRDD, schema)
   }
 }
