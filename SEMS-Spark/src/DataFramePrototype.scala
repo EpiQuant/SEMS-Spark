@@ -10,6 +10,8 @@ import org.apache.spark.ml.feature.VectorAssembler
 
 import org.apache.spark.ml.feature.SQLTransformer
 import org.apache.spark.ml.regression._
+import Parser._
+
 
 case class RegressionOutput(model: LinearRegressionModel,
                             featureNames: Array[String],
@@ -32,109 +34,7 @@ object DataFramePrototype {
    */
   
   var threshold = 0.05
-  
-  def parseInputFileWithSampleNames(input: String): (Vector[(String, Vector[Double])], Vector[String]) = {
-    // Returns tuple with Vector(SNP_name -> values) 
-    //   and the list of sample names in the order the values are recorded
-    
-    // Open file handle
-    val buffSource = Source.fromFile(input)
-    
-    // Grab the header line (and split it)
-    val header: Vector[String] = buffSource.getLines.next.split("\t").toVector
-    // Grab all of the other lines (and split them)
-    val lines: Vector[Vector[String]] =
-      buffSource.getLines.toVector.map(line => line.split("\t").toVector)
-    
-    buffSource.close()
-    
-    /*
-     * The "columns" variable is a collection of collections: for each column, it has a collection
-     *   of the values for that column
-     */
-    // For each column ...
-    val columns: IndexedSeq[Vector[Double]] = for (i <- 1 until header.length) yield {
-      // ... Go through each line and return the value for that column
-      lines.map(x => x(i).toDouble) 
-    }
-   
-    // Turn columns into collection of Tuples with (ColumnName, ValueList)
-    val names_values: IndexedSeq[(String, Vector[Double])] =
-      // i + 1 in header because ID column gone in "columns" but still present in "header"
-      for (i <- 0 until columns.length) yield (header(i + 1), columns(i))
-      
-    val names = lines.map(x => x(0))
-    
-    return (names_values.toVector, names) 
-  }
-  
-  private[this] def createSchema(sorted_snp_names: Array[String]): StructType = {
-    
-    val SNP_headers = sorted_snp_names.map(name => (StructField(name, DoubleType, nullable = true))).toList
-    
-    // prepends the samples column header to the snp headers list
-    val schema_list = StructField("Samples", StringType, nullable = true) :: SNP_headers;
-    
-    val schema = StructType(schema_list)
-    return schema
-  }
-  
-  private[this] def createRow(sample_names_order: Vector[String],
-                sample_position: Int,
-                sorted_snp_names: Array[String],
-                inputRDD: rdd.RDD[(String, Vector[Double])]
-      ): Row = {
-    val sample_name = sample_names_order(sample_position)
-    
-    // These values will be in the order matching that of the sample_names_order
-    val sample_values = sorted_snp_names.map( snp_name => { 
-      // Since we know that there is only one entry for each key in the RDD, we just grab the first item in
-      // the collection returned from the lookup function and extract the value we need from that
-      val samples_snp_value = inputRDD.lookup(snp_name)(0)(sample_position)
-      // This value is returned
-      samples_snp_value
-    })
-    
-    val output = Row.fromSeq(sample_name +: sample_values)
-    return output
-  }
-  
-  def createDataFrame(session: SparkSession, inputRDD: rdd.RDD[(String, Vector[Double])], 
-                      sample_names_order: Vector[String]
-      ): DataFrame = {
-    
-    // Have sorted SNP names, an RDD where SNP -> values in order matching order of sample_names_order
-    val sorted_SNP_names = inputRDD.keys.collect.sorted
-    
-    val schema = createSchema(sorted_SNP_names)
-    /* 
-     * NOTE: This involves an iterative loop with a side effect (reassignment to a true variable)
-     */
-    
-    // Create the data frame that we will add the rows to
-    var rowRDD = session.sqlContext.createDataFrame(session.sparkContext.emptyRDD[Row], schema)
-    
-    // For each sample name
-    for (i <- 0 until sample_names_order.length) {
-      val new_row = createRow(sample_names_order, i, sorted_SNP_names, inputRDD)      
-      // before adding the row to the dataframe, it needs to be contained within a dataframe
-      val rowDF = session.sqlContext.createDataFrame(session.sparkContext.makeRDD(List(new_row)), schema)
-      rowRDD = rowRDD.union(rowDF)
-    }
-    return rowRDD
-  }
-  
-  private[this] def addPair(pair: (String, String), df:DataFrame): DataFrame = {
-    val col1 = pair._1
-    val col2 = pair._2
-    
-    val sqlTrans = new SQLTransformer().setStatement(
-        "SELECT *, (" + col1 + " * " + col2 + ") AS " + col1 + "_" + col2 + " FROM __THIS__" 
-    )
-    // Return the input data frame with the new column added
-    return sqlTrans.transform(df)
-  }
-    
+        
   def createPairwiseList(df: DataFrame): IndexedSeq[(String, String)] = {
     // Get all of the column names except the first: it is the sample name column
     val col_names = df.columns.toVector.slice(1, df.columns.length)
@@ -148,27 +48,32 @@ object DataFramePrototype {
   
   @tailrec
   def addPairwiseCombinations(input_df: DataFrame, input_pairs: IndexedSeq[(String, String)]): DataFrame = {
-    // Add the first pair in the pair list to the dataframe
-    val updated_df = addPair(input_pairs(0), input_df)
     
-    // If that was the last pair to be added, return the final dataframe
-    if (input_pairs.length == 1) {
-      return updated_df
+    def addPair(pair: (String, String)): DataFrame = {
+      val sqlTrans = new SQLTransformer().setStatement(
+          "SELECT *, (" + pair._1 + " * " + pair._2 + ") AS " + pair._1 + "_" + pair._2 + " FROM __THIS__" 
+      )
+      // Return the input data frame with the new column added
+      return sqlTrans.transform(input_df)
     }
-    // If not, remove the pair that was just added from the pair list and call this again on the updated
-    //   inputs
+    
+    // Add the first pair in the pair list to the DataFrame
+    val updated_df = addPair(input_pairs(0))
+    
+    // If that was the last pair to be added, return the final DataFrame
+    if (input_pairs.length == 1) return updated_df
+
+    // If not, remove the pair that was just added from the list and call this function again
     else {
       val updated_pairs = input_pairs.slice(1, input_pairs.length)
       addPairwiseCombinations(updated_df, updated_pairs)      
     }
   }
 
-  def performRegression(features: Array[String], df: DataFrame, label_col: String): RegressionOutput = {
+  def performLinearRegression(features: Array[String], df: DataFrame, label_col: String): RegressionOutput = {
         
     val features_name = "features(" + features.mkString(",") + ")"
-    
     val assembler = new VectorAssembler().setInputCols(features).setOutputCol(features_name)
-    
     val output = assembler.transform(df)
     
     output.show()
@@ -183,45 +88,14 @@ object DataFramePrototype {
     println()
     val newTermsPValue = reg.summary.pValues(features.length - 1)
     
-    
     return RegressionOutput(model = reg,
                             featureNames = features,
                             newestTermsPValue = newTermsPValue,
                             newestTermsName = features(features.length - 1)
                            )
   }
-    
-  def mapFunction(collections: StepCollections,
-                  full_df: DataFrame,
-                  phenotype: String
-                 ): ParSeq[RegressionOutput] = {
-    full_df.show()
-   // In this implementation, the function is mapped to a collection on the
-   //   driver node in a parallel fashion.
-   println("collections not added size: " + collections.not_added.size)
-   val reg_outputs = collections.not_added.toSeq.par.map(x => {
-     // New value always added to the end of the features collection
-      val features = collections.added_prev.toArray :+ x
-      performRegression(features, full_df, phenotype)
-    })
-    return reg_outputs
-  }
   
-  def reduceFunction(regression_outputs: ParSeq[RegressionOutput]): RegressionOutput = {
-    regression_outputs.reduce((x, y) => {
-      // The last p-value will be the one for the intercept. We always want the p-value linked to the last
-      // term to be added to the model, which is the second to last p-value
-      val xPValues = x.model.summary.pValues
-      val xPValue = xPValues(xPValues.length - 2)
-      
-      val yPValues = y.model.summary.pValues
-      val yPValue = yPValues(yPValues.length - 2)
-      
-      if (xPValue <= yPValue) x else y
-    })
-  }
-  
-  def constructNamePValuePairs(reg: RegressionOutput): IndexedSeq[(String, Double)] = {
+  private[this] def constructNamePValuePairs(reg: RegressionOutput): IndexedSeq[(String, Double)] = {
     val map = for (i <- 0 until reg.featureNames.length) yield {
       (reg.featureNames(i), reg.model.summary.pValues(i))
     }
@@ -235,11 +109,38 @@ object DataFramePrototype {
                    collections: StepCollections,
                    prev_best_model: RegressionOutput = null
                    ): RegressionOutput = {
+    
+    def mapFunction(collections: StepCollections): ParSeq[RegressionOutput] = {
+      df.show()
+      // In this implementation, the function is mapped to a collection on the
+      //   driver node in a parallel fashion.
+      val reg_outputs = collections.not_added.toSeq.par.map(x => {
+        // New value always added to the end of the features collection
+        val features = collections.added_prev.toArray :+ x
+        performLinearRegression(features, df, phenotype)
+      })
+      return reg_outputs
+    }
+    
+    def reduceFunction(regression_outputs: ParSeq[RegressionOutput]): RegressionOutput = {
+      regression_outputs.reduce((x, y) => {
+        // The last p-value will be the one for the intercept. We always want the p-value linked to the last
+        // term to be added to the model, which is the second to last p-value
+        val xPValues = x.model.summary.pValues
+        val xPValue = xPValues(xPValues.length - 2)
+      
+        val yPValues = y.model.summary.pValues
+        val yPValue = yPValues(yPValues.length - 2)
+      
+        if (xPValue <= yPValue) x else y
+      })
+    }
+    
     /*
      *  Step 1: find the best regression for those SNPs still under consideration
      */
     // Map generates all of the regression outputs, and reduce finds the best one
-    val bestRegression = reduceFunction(mapFunction(collections, df, phenotype))
+    val bestRegression = reduceFunction(mapFunction(collections))
     val pValues = bestRegression.model.summary.pValues
         
     // If the p-value of the newest term does not meet the threshold, return the prev_best_model
@@ -298,7 +199,7 @@ object DataFramePrototype {
     /*
      *  Parse the input files
      */
-    val SNPdata = parseInputFileWithSampleNames(SNP_file)
+    /*val SNPdata = parseInputFileWithSampleNames(SNP_file)
     val phenoData = parseInputFileWithSampleNames(pheno_file)
     
     /* Original SNPs
@@ -311,6 +212,9 @@ object DataFramePrototype {
     
     val snp_df = createDataFrame(spark, originalSNPs, SNPdata._2)
     val pheno_df = createDataFrame(spark, phenotypes, phenoData._2)
+    */
+    val snp_df = Parser.CreateDataframe(spark, SNP_file, false, null)
+    val pheno_df = Parser.CreateDataframe(spark, pheno_file, false, null)
     
     val pairs = createPairwiseList(snp_df)
     val full_df = addPairwiseCombinations(snp_df, pairs)
@@ -318,16 +222,15 @@ object DataFramePrototype {
     // Dataframe is made persistent
     val pheno_SNP_df = full_df.join(pheno_df, "Samples").persist()
     
-    val phenotype = phenoData._1(0)._1
+    val phenotype = "PH1"
     
-    val snp_names = SNPdata._1.map(x => x._1)
+    //val snp_names = SNPdata._1.map(x => x._1)
+    val snp_names = full_df.columns.toVector.slice(1, full_df.columns.length)
     
     val not_added_init = HashSet() ++ snp_names
         
     val initial_collection = new StepCollections(not_added = not_added_init)
-        
-    val mapTest = mapFunction(initial_collection, pheno_SNP_df, phenotype) 
-    
+
     /*mapTest.toSeq.foreach(x => {
       for (i <- 0 until x.featureNames.length) {
         println(x.featureNames(i) + ",")
@@ -344,7 +247,6 @@ object DataFramePrototype {
     
     val stepsTest = performSteps(spark, pheno_SNP_df, phenotype, initial_collection, null)
     stepsTest.featureNames.foreach(println)
-    
     
   }
 }
