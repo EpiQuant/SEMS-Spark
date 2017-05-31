@@ -142,7 +142,7 @@ object DataFramePrototype {
     // Map generates all of the regression outputs, and reduce finds the best one
     val bestRegression = reduceFunction(mapFunction(collections))
     val pValues = bestRegression.model.summary.pValues
-        
+    
     // If the p-value of the newest term does not meet the threshold, return the prev_best_model
     if (bestRegression.newestTermsPValue >= threshold) {
       if (prev_best_model != null) {
@@ -154,6 +154,14 @@ object DataFramePrototype {
     }
     else {
       val new_collections = collections.copy()
+      
+      // Now that the regressions for this round have completed, return any entries in the skipped
+      //   category to the not_added category so they may be considered in subsequent iterations
+      new_collections.skipped.foreach( x => {
+        new_collections.skipped.remove(x)
+        new_collections.not_added.add(x)
+      })
+      
       /*
        * Remove the newest term from the not_added category and put it in the added_prev category
        */
@@ -243,7 +251,7 @@ object DataFramePrototype {
     println(redTest.model.summary.pValues(0))
     
     */
-    threshold = 0.05
+    threshold = 1
     
     val stepsTest = performSteps(spark, pheno_SNP_df, phenotype, initial_collection, null)
     stepsTest.featureNames.foreach(println)
