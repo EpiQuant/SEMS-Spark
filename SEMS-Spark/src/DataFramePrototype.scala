@@ -26,6 +26,8 @@ case class StepCollections(not_added: HashSet[String],
 
 object DataFramePrototype {
   
+  // Comment
+  
   /*
    *  Maven dependencies:
    *    spark-core_2.11
