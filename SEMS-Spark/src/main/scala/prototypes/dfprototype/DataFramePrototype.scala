@@ -1,4 +1,5 @@
-import scala.io.Source
+package prototypes.dfprototype
+
 import scala.annotation.tailrec
 import scala.collection.mutable.HashSet
 import scala.collection.parallel.ParSeq
@@ -7,11 +8,9 @@ import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 import org.apache.spark.ml.feature.VectorAssembler
-
 import org.apache.spark.ml.feature.SQLTransformer
 import org.apache.spark.ml.regression._
 import Parser._
-
 
 case class RegressionOutput(model: LinearRegressionModel,
                             featureNames: Array[String],
@@ -25,9 +24,7 @@ case class StepCollections(not_added: HashSet[String],
                           )
 
 object DataFramePrototype {
-  
-  // Comment
-  
+    
   /*
    *  Maven dependencies:
    *    spark-core_2.11
@@ -195,6 +192,8 @@ object DataFramePrototype {
   }
   
   def main(args: Array[String]) = {
+     
+    
     // 1st argument: SNP file
     // 2nd argument: Phenotype file
     val SNP_file = args(0)
@@ -205,7 +204,7 @@ object DataFramePrototype {
      */
     val spark = SparkSession.builder.master("local").appName("Epistasis").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
- 
+    
     /*
      *  Parse the input files
      */

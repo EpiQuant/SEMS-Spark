@@ -1,3 +1,4 @@
+package prototypes.dfprototype
 
 import scopt.OptionParser
 import scala.io.Source
@@ -5,12 +6,10 @@ import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.SparkSession
-import scala.annotation.tailrec
 import org.apache.spark.ml.regression._
-import org.apache.spark.ml.feature.VectorAssembler
-
-import org.apache.spark.ml.feature.SQLTransformer
 import scala.reflect.runtime.universe._
+import scala.reflect.runtime.universe
+import scala.reflect._
 
 abstract class AbstractParams[T: TypeTag] {
 
