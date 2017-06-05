@@ -181,8 +181,14 @@ object DataFramePrototype {
       })
       
       if (new_collections.not_added.size == 0) {
-        // No more terms that could be added. Return the current best model
-        return bestRegression
+        // No more terms that could be added. Return the current best model, unless there are entries
+        // in the skipped category. If this is the case, perform one last regression with the current
+        // add_prev collection in the model. If something is in the skipped category, the
+        // "bestRegression" variable will still have that term included for this iteration
+        if (new_collections.skipped.size == 0) return bestRegression
+        else {
+          return performLinearRegression(new_collections.added_prev.toArray, df, phenotype)
+        }
       }
       else {
         performSteps(spark, df, phenotype, new_collections, bestRegression) 

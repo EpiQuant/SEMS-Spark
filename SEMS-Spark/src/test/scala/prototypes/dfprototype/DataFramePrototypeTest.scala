@@ -13,6 +13,7 @@ object DataFramePrototypeTest {
   var spark: SparkSession = null
   var pairwiseList: IndexedSeq[(String, String)] = null
   var dfWithPairs: DataFrame = null
+  var performStepsDF: DataFrame = null
   
   @BeforeClass def initialSetup {
     
@@ -20,7 +21,8 @@ object DataFramePrototypeTest {
     spark.sparkContext.setLogLevel("WARN")    
     
     simpleDF = spark.read.json("src/test/resources/basic_data.json")
-    simpleDF.show()
+    performStepsDF = spark.read.json("src/test/resources/performStepsTest.json")
+
   
     pairwiseList = createPairwiseList(simpleDF)
     dfWithPairs = addPairwiseCombinations(simpleDF, pairwiseList)
@@ -59,7 +61,7 @@ class DataFramePrototypeTest {
     })
   }
   
-  @Test def performRegressionTest_1 {
+  @Test def performRegressionTest_simple {
     /*
      * Simple Linear Regression - one feature column
      */
@@ -77,7 +79,7 @@ class DataFramePrototypeTest {
     assertTrue(intercept > 0.00665 && intercept < 0.00667)
   }
   
-  @Test def performRegressionTest_2 {
+  @Test def performRegressionTest_multi {
     /*
      * Multiple Linear Regression - two feature columns
      */
@@ -97,22 +99,20 @@ class DataFramePrototypeTest {
     assertTrue(intercept > 0.0230 && intercept < 0.0232)
   }
   
-  @Test def performStepsTest_1 {
+  @Test def performStepsTest_simple {
     // Tests whether performSteps agrees with the output generated from an R script
     // In this case, there are no entries that will be skipped, i.e. their are no cases
     // where a term is added and later removed from the model
     
-    val data = DataFramePrototypeTest.spark.read.json("src/test/resources/performStepsTest_1.json")
-
     // Initialize the collections case class by adding all of the variables to the not_added collection
     val not_added_init = HashSet() ++ Vector("x1", "x2", "x3", "x4")
     val initial_collection = new StepCollections(not_added = not_added_init)
 
     val reg = performSteps(DataFramePrototypeTest.spark,
-                           df = data,
+                           df = DataFramePrototypeTest.performStepsDF,
                            phenotype = "y",
                            initial_collection
-                          );
+                          )
     assertEquals(reg.featureNames.mkString(","), Vector("x2", "x1").mkString(","))
     assertEquals(reg.newestTermsName, "x1")
     assertTrue(reg.newestTermsPValue > 5.04e-05 && reg.newestTermsPValue < 5.06e-05)
@@ -144,6 +144,58 @@ summary(lm(y~x2 + x1)); summary(lm(y~x2 + x3)); summary(lm(y~x2 + x4))
 summary(lm(y~x2 + x1 + x3)); summary(lm(y~x2 + x1 + x4))
 # No more things should be added to the model, the final model is
 #   y = x2(0.65914) + x1(1.43143) + 53.02180
+*/  
+  }
+  
+  @Test def performStepsTest_skipped {
+    /*  This tests two things:
+     *    1. If a previously added term is no longer significant when another term is added,
+     *         it is removed from the added_prev collection and placed in the skipped category
+     *    2. If there are no more terms in the not_added collection and the skipped collection
+     *         is not empty, a final regression model will be generated that does not include the
+     *         term that was removed from the model in the final step
+     */
+    
+    // For this test, we will start with a term that will not be significant, "x3", in the prev_added
+    //   collection, so it will be found and skipped after a significant term, "x1", is added
+    
+    // In addition, since there will be no others terms that can be added to the model and there
+    //   will be an entry in the skipped category, this test whether the final model (without the
+    //   skipped term) is returned
+    val not_added_init = HashSet() ++ Vector("x1")
+    val added_prev_init = HashSet() ++ Vector("x3")
+    val initial_collection = new StepCollections(not_added = not_added_init,
+                                                 added_prev = added_prev_init
+                                                )
+    val reg = performSteps(DataFramePrototypeTest.spark,
+                           df = DataFramePrototypeTest.performStepsDF,
+                           phenotype = "y",
+                           initial_collection
+                          )
+    assertEquals(reg.newestTermsName, "x1")
+    assertTrue(reg.newestTermsPValue > 0.00514 && reg.newestTermsPValue < 0.00516)
+                          
+    assertEquals(reg.featureNames.mkString(","), Vector("x1").mkString(","))
+    assertTrue(reg.model.coefficients(0) > 2.1222 && reg.model.coefficients(0) < 2.1224)
+    assertTrue(reg.model.intercept > 78.5723 && reg.model.intercept < 78.5725)
+
+/*
+ * The output of this test should match the outputs from this R script
+ * 
+# Data from https://onlinecourses.science.psu.edu/stat501/sites/onlinecourses.science.psu.edu.stat501/files/data/cement.txt
+y <- c(78.5, 74.3, 104.3, 72.5, 93.1, 115.9, 83.8, 113.3, 109.4)
+x1 <- c(7, 1, 11, 1, 2, 21, 1, 11, 10)
+x3 <- c(6, 15, 8, 22, 18, 4, 23, 9, 8)
+
+# In this test, we start with a term already included in the model
+# This term, x3, should be insignificant and removed from the model
+# and added to the skipped category after x1 is added
+
+summary(lm(y~x3 + x1))
+# x1 will be added and x3 should be removed as it has a p-value of 0.6205
+
+summary(lm(y~x1))
+# The final model should be y = x1(2.1223) + 78.5724  
 */  
   }
   
