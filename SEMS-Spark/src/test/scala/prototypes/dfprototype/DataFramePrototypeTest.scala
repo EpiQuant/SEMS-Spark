@@ -1,5 +1,6 @@
 package prototypes.dfprototype
 
+import scala.collection.mutable.HashSet
 import org.apache.spark._
 import org.apache.spark.sql._
 import prototypes.dfprototype.DataFramePrototype._
@@ -96,8 +97,54 @@ class DataFramePrototypeTest {
     assertTrue(intercept > 0.0230 && intercept < 0.0232)
   }
   
-  @Test def performSteps_NotAddedTest {
-    // Tests whether the item in 
+  @Test def performStepsTest_1 {
+    // Tests whether performSteps agrees with the output generated from an R script
+    // In this case, there are no entries that will be skipped, i.e. their are no cases
+    // where a term is added and later removed from the model
+    
+    val data = DataFramePrototypeTest.spark.read.json("src/test/resources/performStepsTest_1.json")
+
+    // Initialize the collections case class by adding all of the variables to the not_added collection
+    val not_added_init = HashSet() ++ Vector("x1", "x2", "x3", "x4")
+    val initial_collection = new StepCollections(not_added = not_added_init)
+
+    val reg = performSteps(DataFramePrototypeTest.spark,
+                           df = data,
+                           phenotype = "y",
+                           initial_collection
+                          );
+    assertEquals(reg.featureNames.mkString(","), Vector("x2", "x1").mkString(","))
+    assertEquals(reg.newestTermsName, "x1")
+    assertTrue(reg.newestTermsPValue > 5.04e-05 && reg.newestTermsPValue < 5.06e-05)
+    
+    val x1Coeff = reg.model.coefficients(1)
+    val x2Coeff = reg.model.coefficients(0)
+    val intercept = reg.model.intercept
+        
+    assertTrue(x1Coeff > 1.43142 && x1Coeff < 1.43144)
+    assertTrue(x2Coeff > 0.65913 && x2Coeff < 0.65915)
+    assertTrue(intercept > 53.02179 && intercept < 53.02181)
+
+/* 
+ * The following is the Rscript example that this test should agree with 
+ * 
+# Data from https://onlinecourses.science.psu.edu/stat501/sites/onlinecourses.science.psu.edu.stat501/files/data/cement.txt
+y  <- c(78.5, 74.3, 104.3, 72.5, 93.1, 115.9, 83.8, 113.3, 109.4)
+x1 <- c(   7,    1,    11,    1,    2,    21,    1,    11,    10)
+x2 <- c(  26,   29,    56,   31,   54,    47,   40,    66,    68)
+x3 <- c(   6,   15,     8,   22,   18,     4,   23,     9,     8)
+x4 <- c(  60,   52,     6,   44,   22,    26,   34,    12,    12)
+
+summary(lm(y~x1)); summary(lm(y~x2)); summary(lm(y~x3)); summary(lm(y~x4))
+# x2 is kept with p-value of 0.00321
+
+summary(lm(y~x2 + x1)); summary(lm(y~x2 + x3)); summary(lm(y~x2 + x4))
+# x1 is kept with p-value of 5.05e-05
+
+summary(lm(y~x2 + x1 + x3)); summary(lm(y~x2 + x1 + x4))
+# No more things should be added to the model, the final model is
+#   y = x2(0.65914) + x1(1.43143) + 53.02180
+*/  
   }
   
 }

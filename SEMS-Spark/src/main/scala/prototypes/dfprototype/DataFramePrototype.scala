@@ -102,7 +102,7 @@ object DataFramePrototype {
                    prev_best_model: RegressionOutput = null
                    ): RegressionOutput = {
     def mapFunction(collections: StepCollections): ParSeq[RegressionOutput] = {
-      df.show()
+      //df.show()
       // In this implementation, the function is mapped to a collection on the
       //   driver node in a parallel fashion.
       val reg_outputs = collections.not_added.toSeq.par.map(x => {
@@ -251,7 +251,7 @@ object DataFramePrototype {
     println(redTest.model.summary.pValues(0))
     
     */
-    threshold = 1
+    //threshold = 1
     
     val stepsTest = performSteps(spark, pheno_SNP_df, phenotype, initial_collection, null)
     stepsTest.featureNames.foreach(println)
