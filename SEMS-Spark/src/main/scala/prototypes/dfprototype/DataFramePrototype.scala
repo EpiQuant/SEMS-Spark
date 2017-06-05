@@ -93,14 +93,7 @@ object DataFramePrototype {
                             newestTermsName = features(features.length - 1)
                            )
   }
-  
-  private[this] def constructNamePValuePairs(reg: RegressionOutput): IndexedSeq[(String, Double)] = {
-    val map = for (i <- 0 until reg.featureNames.length) yield {
-      (reg.featureNames(i), reg.model.summary.pValues(i))
-    }
-    map
-  }
-  
+
   @tailrec
   def performSteps(spark: SparkSession,
                    df: DataFrame,
@@ -108,7 +101,6 @@ object DataFramePrototype {
                    collections: StepCollections,
                    prev_best_model: RegressionOutput = null
                    ): RegressionOutput = {
-    
     def mapFunction(collections: StepCollections): ParSeq[RegressionOutput] = {
       df.show()
       // In this implementation, the function is mapped to a collection on the
@@ -133,6 +125,13 @@ object DataFramePrototype {
       
         if (xPValue <= yPValue) x else y
       })
+    }
+    
+    def constructNamePValuePairs(reg: RegressionOutput): IndexedSeq[(String, Double)] = {
+      val map = for (i <- 0 until reg.featureNames.length) yield {
+        (reg.featureNames(i), reg.model.summary.pValues(i))
+      }
+      map
     }
     
     /*
