@@ -75,7 +75,7 @@ object DataFramePrototype {
     val assembler = new VectorAssembler().setInputCols(features).setOutputCol(features_name)
     val output = assembler.transform(df)
     
-    output.show()
+   // output.show()
     
     val lr = new LinearRegression()
                  .setLabelCol(label_col)
@@ -102,10 +102,9 @@ object DataFramePrototype {
                    prev_best_model: RegressionOutput = null
                    ): RegressionOutput = {
     def mapFunction(collections: StepCollections): ParSeq[RegressionOutput] = {
-      //df.show()
       // In this implementation, the function is mapped to a collection on the
       //   driver node in a parallel fashion.
-      val reg_outputs = collections.not_added.toSeq.par.map(x => {
+      val reg_outputs = collections.not_added.par.toSeq.map(x => {
         // New value always added to the end of the features collection
         val features = collections.added_prev.toArray :+ x
         performLinearRegression(features, df, phenotype)
@@ -213,28 +212,26 @@ object DataFramePrototype {
     /*
      *  Parse the input files
      */
-    /*val SNPdata = parseInputFileWithSampleNames(SNP_file)
-    val phenoData = parseInputFileWithSampleNames(pheno_file)
+
+    //val snp_df = Parser.CreateDataframe(spark, SNP_file, false, null)
+    //val pheno_df = Parser.CreateDataframe(spark, pheno_file, false, null)
     
-    /* Original SNPs
-     * This is the same data used in the scala key-value association defined in the broadSNP variable,
-     *   only now these are distributed across the cluster, i.e., it is a Spark key-value association, not
-     *   the simpler scala map
-     */
-    val originalSNPs: rdd.RDD[(String, Vector[Double])] = spark.sparkContext.parallelize(SNPdata._1)
-    val phenotypes = spark.sparkContext.parallelize(phenoData._1)
-    
-    val snp_df = createDataFrame(spark, originalSNPs, SNPdata._2)
-    val pheno_df = createDataFrame(spark, phenotypes, phenoData._2)
-    */
-    val snp_df = Parser.CreateDataframe(spark, SNP_file, false, null)
+    //val SNP_file = "/Users/jacobheldenbrand/Documents/Spark_playground/Angela_test_data/1106_Markers_NAM_Kernel_Color_Families_Only_for_R_10SNPs.txt"
+    //val pheno_file = "/Users/jacobheldenbrand/Documents/Spark_playground/Angela_test_data/Simulated.Data.100.Reps.Herit.0.5_1Pheno.txt"
+        
+    val snp_df = Parser.CreateDataframe(spark, SNP_file, true, Array(1,2,3,4))
     val pheno_df = Parser.CreateDataframe(spark, pheno_file, false, null)
+    
+    snp_df.show()
+    pheno_df.show()
     
     val pairs = createPairwiseList(snp_df)
     val full_df = addPairwiseCombinations(snp_df, pairs)
     
     // Dataframe is made persistent
     val pheno_SNP_df = full_df.join(pheno_df, "Samples").persist()
+    
+    pheno_SNP_df.show()
     
     val phenotype = "PH1"
     
@@ -244,20 +241,6 @@ object DataFramePrototype {
     val not_added_init = HashSet() ++ snp_names
         
     val initial_collection = new StepCollections(not_added = not_added_init)
-
-    /*mapTest.toSeq.foreach(x => {
-      for (i <- 0 until x.featureNames.length) {
-        println(x.featureNames(i) + ",")
-        println(x.model.summary.pValues(i))
-      }
-    })
-    
-    val redTest = reduceFunction(mapTest)
-    redTest.featureNames.foreach(println)
-    println(redTest.model.summary.pValues(0))
-    
-    */
-    //threshold = 1
     
     val stepsTest = performSteps(spark, pheno_SNP_df, phenotype, initial_collection, null)
     stepsTest.featureNames.foreach(println)

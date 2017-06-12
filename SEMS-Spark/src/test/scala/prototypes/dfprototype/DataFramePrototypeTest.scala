@@ -98,7 +98,7 @@ class DataFramePrototypeTest {
     assertTrue(X2coeff > 0.1933 && X1coeff < 0.1935)
     assertTrue(intercept > 0.0230 && intercept < 0.0232)
   }
-  
+
   @Test def performStepsTest_simple {
     // Tests whether performSteps agrees with the output generated from an R script
     // In this case, there are no entries that will be skipped, i.e. their are no cases
@@ -119,11 +119,10 @@ class DataFramePrototypeTest {
     
     val x1Coeff = reg.model.coefficients(1)
     val x2Coeff = reg.model.coefficients(0)
-    val intercept = reg.model.intercept
         
     assertTrue(x1Coeff > 1.43142 && x1Coeff < 1.43144)
     assertTrue(x2Coeff > 0.65913 && x2Coeff < 0.65915)
-    assertTrue(intercept > 53.02179 && intercept < 53.02181)
+    assertTrue(reg.model.intercept > 53.02179 && reg.model.intercept < 53.02181)
 
 /* 
  * The following is the Rscript example that this test should agree with 
@@ -146,7 +145,7 @@ summary(lm(y~x2 + x1 + x3)); summary(lm(y~x2 + x1 + x4))
 #   y = x2(0.65914) + x1(1.43143) + 53.02180
 */  
   }
-  
+
   @Test def performStepsTest_skipped {
     /*  This tests two things:
      *    1. If a previously added term is no longer significant when another term is added,
@@ -197,6 +196,40 @@ summary(lm(y~x3 + x1))
 summary(lm(y~x1))
 # The final model should be y = x1(2.1223) + 78.5724  
 */  
+  }
+  
+  @Test def performSteps_skippedReturned {
+    /*
+     * This tests that items in the skipped category are returned to the not_added collection after
+     *   one iteration
+     * 
+     * This works by starting with x1 in the skipped category. So x2 will be added in the
+     *   next iteration, provided that it has been removed from the skipped category
+     */
+    val not_added_init = HashSet() ++ Vector("x1")
+    val skipped_init = HashSet() ++ Vector("x2")
+    val initial_collection = new StepCollections(not_added = not_added_init,
+                                                 skipped = skipped_init
+                                                )
+    val reg = performSteps(DataFramePrototypeTest.spark,
+                           df = DataFramePrototypeTest.performStepsDF,
+                           phenotype = "y",
+                           initial_collection
+                          )
+    val x1Coeff = reg.model.coefficients(0)
+    val x2Coeff = reg.model.coefficients(1)
+    val intercept = reg.model.intercept
+    
+    assertEquals(reg.newestTermsName, "x2")
+    assertEquals(reg.featureNames.mkString(","), Vector("x1", "x2").mkString(","))
+    assertTrue(reg.newestTermsPValue > 3.41e-05 && reg.newestTermsPValue < 3.43e-05)
+    assertTrue(x1Coeff > 1.43142 && x1Coeff < 1.43144)
+    assertTrue(x2Coeff > 0.65913 && x2Coeff < 0.65915)
+    assertTrue(reg.model.intercept > 53.02179 && reg.model.intercept < 53.02181)
+  }
+  
+  @Test def performSteps_DegreesOfFreedomError {
+    
   }
   
 }
