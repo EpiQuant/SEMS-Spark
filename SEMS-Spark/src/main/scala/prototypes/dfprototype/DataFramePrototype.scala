@@ -206,7 +206,7 @@ object DataFramePrototype {
     /*
      *  Define spark session
      */
-    val spark = SparkSession.builder.master("local").appName("Epistasis").getOrCreate()
+    val spark = SparkSession.builder.master("local[2]").appName("Epistasis").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     
     /*
