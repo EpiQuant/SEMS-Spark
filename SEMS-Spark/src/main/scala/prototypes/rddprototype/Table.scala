@@ -1,6 +1,6 @@
 package prototypes.rddprototype
 
-class Table(table: Vector[Vector[Any]]) {
+class Table(val table: Vector[Vector[Any]]) {
     
   def transpose: Table = {
     new Table(table.transpose)
@@ -13,8 +13,44 @@ class Table(table: Vector[Vector[Any]]) {
     }
   }
 
+  /** Select a column based on the columns index, starting from 0 */
   def selectColumn(col: Int): Vector[Any] = {
     table.transpose.apply(col)
+  }
+  
+  /** Select a column based on the columnName */
+  def selectColumn(colName: String): Vector[Any] = {
+    val map = this.getColumnNames.zipWithIndex.toMap
+    val columnIndex = map(colName)
+    this.selectColumn(columnIndex)
+  }
+  
+  /**
+   * Puts each row of the table in the order defined by the input string list
+   * 
+   * Used to make sure the samples in the SNP table and phenotype tables are
+   *   in the same order
+   */
+  def sortRowsByNameList(sampleOrder: Vector[String]): Table = {
+
+    val rowMap = this.createRowMap
+    
+    // This is a closure (free variable is rowMap)
+    val createRowFunc = (i: String) => (i +: rowMap(i)).toVector
+    /*
+     * Check to be sure that the samples present in this table match
+     *   the samples provided in the input list.
+     * The "Sample" column name itself is filtered out when this comparison
+     *   is made.
+     */
+    val tablesRowNames = rowMap.keys.filter(_ != "Sample").toList.sorted
+    if (tablesRowNames == sampleOrder.sorted) {
+      val outputRows = ("Sample" +: sampleOrder).map(createRowFunc)
+      return new Table(outputRows)
+    }
+    else {
+      throw new Exception("Samples do not match between the input tables")
+    } 
   }
   
   /** Filters out columns from the input 2D Vector */
@@ -35,14 +71,43 @@ class Table(table: Vector[Vector[Any]]) {
     return new Table(filtered.toVector)
   }
   
-  private[Table] def createMap: Map[String, Vector[Any]] = {
+  /** Returns a collection of the column names, except for the first column */
+  def getColumnNames: Vector[String] = {
+    table.head.drop(1).map(_.toString)
+  }
+  
+    /**
+   * Creates a map where the key is the column name and the values are the column's values
+   * 
+   * This function leaves off the sample names column (the 1st column) itself
+   */
+  def createColumnMap: Map[String, Vector[Double]] = {
+    this.createColumnList.toMap
+  }
+  
+  /**
+   * Creates a list of tuples for each column, except for the sample name column itself
+   * 
+   *  The first entry in each item is the column name and 
+   *    the second is the column's values
+   */
+  def createColumnList: Vector[(String, Vector[Double])] = {
+    // The 1st entry (the sample name column) is skipped
+    val list = for (i <- 1 until table(0).size) yield {
+      val column = this.selectColumn(i)
+      (column(0).toString, column.drop(1).map(_.toString.toDouble))
+    }
+    list.toVector
+  }
+ 
+  def createRowMap: Map[String, Vector[Any]] = {
     // Make map where rowName -> vector of rows items (excluding the name itself)
     val rowMap = this.table.drop(1).map(x => x(0).toString() -> x.drop(1)).toMap
     // The header row itself is added, with Sample added as the key
     rowMap + ("Sample" -> this.table(0).drop(1))
   }
   
-  /** Will perform an inner join on two tables based on the first column */
+  /** Will perform an inner join on two tables based on the first column 
    def join(otherTable: Table): Table = {
      
     // Check whether the rows in the join column are fully compatible between the two tables
@@ -50,8 +115,8 @@ class Table(table: Vector[Vector[Any]]) {
     val otherNameColumn = otherTable.selectColumn(0).map(_.toString())
     if (thisNameColumn != otherNameColumn) throw new Exception("Join cannot be performed, name columns are incompatible")
     else {
-      val thisMap = this.createMap
-      val otherMap = otherTable.createMap
+      val thisMap = this.createRowMap
+      val otherMap = otherTable.createRowMap
             
       val headerRow = ("Sample" +: thisMap("Sample")) ++ otherMap("Sample")
       val otherRows = thisNameColumn.drop(1).map(x => (x +: thisMap(x)) ++ otherMap(x))
@@ -59,5 +124,5 @@ class Table(table: Vector[Vector[Any]]) {
       new Table(headerRow +: otherRows)
     }
   }
-  
+  */
 }
