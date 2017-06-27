@@ -1,19 +1,31 @@
 package prototypes.rddprototype
 
+import statistics._
+import scala.annotation.tailrec
+import scala.collection.mutable.HashSet
 import prototypes.dfprototype.Parser
 import scala.io.Source
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.broadcast._
 
+case class StepCollections(not_added: HashSet[String],
+                           added_prev: HashSet[String] = HashSet(),
+                           skipped: HashSet[String] = HashSet()
+                          )
+
+
+                          
 object RDDPrototype {
+  
+  val threshold = 0.05
   
   /** Reads in a <delimiter> separated file, and returns a new 2D Vector of its contents */
   def readFile(filePath: String, delimiter: String): Table = {
     val buffSource = Source.fromFile(filePath)
     return new Table(buffSource.getLines.toVector.map(_.split(delimiter).toVector))
   }
-
+  
   /** Create a non-redundant pairwise list of names from a vector of string inputs
    *  
    *  Non-redundant means that X_Y is the same as Y_X, and we only create one
@@ -44,7 +56,87 @@ object RDDPrototype {
     val newVals = for (i <- 0 until firstVals.size) yield firstVals(i) * secondVals(i)
     (combinedName, newVals.toVector)
   }
-  
+  /*
+   @tailrec
+  def performSteps(spark: SparkContext,
+                   df: DataFrame,
+                   phenotype: String,
+                   collections: StepCollections,
+                   prev_best_model: RegressionSummary = null
+                   ): RegressionSummary = {
+    def mapFunction() = {
+
+    }
+    
+    def reduceFunction() = {
+
+    }
+
+    
+    /*
+     *  Step 1: find the best regression for those SNPs still under consideration
+     */
+    // Map generates all of the regression outputs, and reduce finds the best one
+    val bestRegression = reduceFunction(mapFunction(collections))
+    val pValues = bestRegression.model.summary.pValues
+    
+    // If the p-value of the newest term does not meet the threshold, return the prev_best_model
+    if (bestRegression.newestTermsPValue >= threshold) {
+      if (prev_best_model != null) {
+        return prev_best_model
+      }
+      else {
+        throw new Exception("No terms could be added to the model at a cutoff of " + threshold)
+      }
+    }
+    else {
+      val new_collections = collections.copy()
+      
+      // Now that the regressions for this round have completed, return any entries in the skipped
+      //   category to the not_added category so they may be considered in subsequent iterations
+      new_collections.skipped.foreach( x => {
+        new_collections.skipped.remove(x)
+        new_collections.not_added.add(x)
+      })
+      
+      /*
+       * Remove the newest term from the not_added category and put it in the added_prev category
+       */
+      new_collections.not_added.remove(bestRegression.newestTermsName)
+      new_collections.added_prev.add(bestRegression.newestTermsName)
+      
+      /*
+       * Step 2: Check to make sure none of the previously added terms are no longer significant
+       * 				 If they are, remove them from consideration in the next round (put them in skipped) and
+       *         take them out of the model
+       */
+      val namePValuePairs = constructNamePValuePairs(bestRegression)
+      namePValuePairs.foreach(pair => {
+        if (pair._2 >= threshold) {
+          // Remove this term from the prev_added collection, and move it to the skipped category
+          new_collections.added_prev.remove(pair._1)
+          new_collections.skipped.add(pair._1)
+        }
+      })
+      
+      if (new_collections.not_added.size == 0) {
+        // No more terms that could be added. Return the current best model, unless there are entries
+        // in the skipped category. If this is the case, perform one last regression with the current
+        // add_prev collection in the model. If something is in the skipped category, the
+        // "bestRegression" variable will still have that term included for this iteration
+        if (new_collections.skipped.size == 0) return bestRegression
+        else {
+          return performLinearRegression(new_collections.added_prev.toArray, df, phenotype)
+        }
+      }
+      else {
+        performSteps(spark, df, phenotype, new_collections, bestRegression) 
+      }
+    }
+  }
+   
+  */
+  /*
   def main(args: Array[String]) {
     
     val spark = SparkSession.builder.master("local[2]").appName("Epistasis").getOrCreate()
@@ -84,9 +176,10 @@ object RDDPrototype {
    
     val fullSnpRDD = singleSnpRDD ++ (pairedSnpRDD).persist()
     
-    fullSnpRDD
+    val phenoBroadcast = spark.sparkContext.broadcast(phenoTable.createColumnMap)
+    
   }
-  
+  */
   
   
 }
