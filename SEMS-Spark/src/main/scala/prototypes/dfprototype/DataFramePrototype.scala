@@ -101,10 +101,10 @@ object DataFramePrototype {
                    collections: StepCollections,
                    prev_best_model: RegressionOutput = null
                    ): RegressionOutput = {
-    def mapFunction(collections: StepCollections): ParSeq[RegressionOutput] = {
+    def mapFunction(collections: StepCollections): Seq[RegressionOutput] = {
       // In this implementation, the function is mapped to a collection on the
       //   driver node in a parallel fashion.
-      val reg_outputs = collections.not_added.par.toSeq.map(x => {
+      val reg_outputs = collections.not_added.toSeq.map(x => {
         // New value always added to the end of the features collection
         val features = collections.added_prev.toArray :+ x
         performLinearRegression(features, df, phenotype)
@@ -112,7 +112,7 @@ object DataFramePrototype {
       return reg_outputs
     }
     
-    def reduceFunction(regression_outputs: ParSeq[RegressionOutput]): RegressionOutput = {
+    def reduceFunction(regression_outputs: Seq[RegressionOutput]): RegressionOutput = {
       regression_outputs.reduce((x, y) => {
         // The last p-value will be the one for the intercept. We always want the p-value linked to the last
         // term to be added to the model, which is the second to last p-value
@@ -206,7 +206,7 @@ object DataFramePrototype {
     /*
      *  Define spark session
      */
-    val spark = SparkSession.builder.master("local").appName("Epistasis").getOrCreate()
+    val spark = SparkSession.builder.master("local[3]").appName("Epistasis").getOrCreate()
     //val spark = SparkSession.builder.appName("DataFramePrototype").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     

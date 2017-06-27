@@ -2,6 +2,7 @@ package prototypes.rddprototype
 
 import statistics._
 import scala.annotation.tailrec
+import scala.collection.immutable.HashMap
 import scala.collection.mutable.HashSet
 import prototypes.dfprototype.Parser
 import scala.io.Source
@@ -57,13 +58,21 @@ object RDDPrototype {
     (combinedName, newVals.toVector)
   }
   /*
-   @tailrec
+  @tailrec
   def performSteps(spark: SparkContext,
-                   df: DataFrame,
-                   phenotype: String,
+                   snpDataRDD: rdd.RDD[(String, Vector[Double])],
+                   broadcastPhenotypeMap: Broadcast[Map[String, Vector[Double]]],
                    collections: StepCollections,
                    prev_best_model: RegressionSummary = null
                    ): RegressionSummary = {
+    /* First, create a Broadcast of the snp values that are already in the model so that their values
+     *   will be available to all of the nodes (we know that they will all need copies of these)
+     *   
+     * Since a broadcast cannot be updated, these need to be recreated at the beginning of each iteration
+     *   as the SNPs included in the models change
+     */
+    val addedPrevVals = collections.added_prev.toArray.map(x => snpDataRDD.lookup(x))
+     
     def mapFunction() = {
 
     }
@@ -135,8 +144,7 @@ object RDDPrototype {
     }
   }
    
-  */
-  /*
+
   def main(args: Array[String]) {
     
     val spark = SparkSession.builder.master("local[2]").appName("Epistasis").getOrCreate()
@@ -179,7 +187,7 @@ object RDDPrototype {
     val phenoBroadcast = spark.sparkContext.broadcast(phenoTable.createColumnMap)
     
   }
-  */
   
+  */
   
 }

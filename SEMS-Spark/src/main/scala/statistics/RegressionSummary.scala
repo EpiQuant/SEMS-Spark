@@ -126,5 +126,11 @@ class RegressionSummary(xColumnNames: Array[String],
     // Loop through all of the t-Statistics but for the intercept
     tStatisticsOfCoefficients.map(tStatistic2pValue(_))
   }
+  /** Key is the name of the X variable, the value is the p-value associated with it */
+  lazy val pValueMap = {
+    // Drop the intercept 
+    val pairs = xColumnNames.zip(pValuesOfCoefficients.toArray)
+    pairs.toMap
+  }
   
 }
