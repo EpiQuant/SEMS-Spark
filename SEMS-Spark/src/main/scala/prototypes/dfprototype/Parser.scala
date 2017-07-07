@@ -101,7 +101,7 @@ object Parser {
       
   }
   
-  def CreateDataframe(spark: SparkSession, file: String, t: Boolean, rmCols: Array[Int]): DataFrame = {
+  def CreateDataframe_obsolete(spark: SparkSession, file: String, t: Boolean, rmCols: Array[Int]): DataFrame = {
 
     val data: Vector[String] = Source.fromFile(file).getLines().toVector
     val splitLines: Vector[Vector[String]] = data.map(x => x.split("\t").toVector)
@@ -143,4 +143,65 @@ object Parser {
     /* create DataFrame from the RDD of Rows and schema */  
     spark.createDataFrame(rowRDD, schema)
   }
+
+
+
+
+
+ def CreateDataframe(spark: SparkSession, file: String, t: Boolean, rmCols: Array[Int]): DataFrame ={
+
+    val fileRDD = spark.sparkContext.textFile(file); 
+
+    /* filter out the unnecessary columns as supplied in the main arguments */
+
+    val splitRDD = if (rmCols != null) {
+          fileRDD.map{
+            line => line.split("\t").zipWithIndex
+            .filterNot(x => rmCols.contains(x._2)).map(x => x._1)
+          }
+        } else fileRDD.map(line => line.split("\t"))
+   
+   /* transpose the data if necessary */
+    val finalData = 
+    if(t == true){
+      val byColumnAndRow = splitRDD.zipWithIndex.flatMap {
+        case(row, rowIndex) => row.zipWithIndex.map{
+          case(string, columnIndex) => columnIndex -> (rowIndex, string)
+        }
+      }
+      val byColumn = byColumnAndRow.groupByKey.sortByKey().values
+      byColumn.map {
+        indexedRow => indexedRow.toArray.sortBy(_._1).map(_._2)
+      }
+    } else {
+      splitRDD
+    }
+
+    /* filter out header row */
+
+    val header = finalData.first()
+    val filtered = finalData.mapPartitionsWithIndex((idx, iter) => if (idx ==0 ) iter.drop(1) else iter)  
+
+    /* turn filtered data into Rows, where in each Row 
+     * the first element is a String (the distinct identifier for individuals) 
+     * followed by Doubles (actual data for each SNP)
+     */
+
+    val rowRDD = filtered.map{
+          attributes => Row.fromSeq(attributes(0) 
+             +: attributes.slice(1, attributes.length).map(x=>x.toDouble))
+        }
+
+    /* build schema: the first column is of StringType and the rest of columns are DoubleType
+     * corresponding to the RDD of Rows int the previous step
+     */
+    
+val schema = StructType(header
+      .map(fieldName => StructField(fieldName, if(fieldName == header(0)) StringType else DoubleType, nullable = false)))
+  
+    spark.createDataFrame(rowRDD, schema)
+
+  }
+
+
 }
