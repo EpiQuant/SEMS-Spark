@@ -1,7 +1,5 @@
 package statistics
 
-import breeze.linalg.DenseVector
-import breeze.linalg.DenseMatrix
 import breeze.linalg._
 import breeze.stats.regression.LeastSquaresRegressionResult
 import breeze.stats.distributions.StudentsT
