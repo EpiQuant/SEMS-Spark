@@ -32,7 +32,7 @@ class OLSRegression(val xColumnNames: Array[String],
   private[this] val inverseOfXtimesXt = inv(transposedX * XsWithZeroColumn)
 
   /** The estimates of the coefficients; the last entry is the estimate of the intercept */
-  val coefficients = inverseOfXtimesXt * transposedX * yAsBreezeVector
+  val coefficients = (inverseOfXtimesXt * transposedX * yAsBreezeVector).toArray
   
   /** 
    *  Predicted Y values, also known as Y_hat
@@ -74,5 +74,30 @@ class OLSRegression(val xColumnNames: Array[String],
   /** Prints a summary of the regression, in a format similar to R's summary */
   def printSummary {
     
+    def standardizeLengths(arr: Array[String], rightPadding: Boolean = false) = {
+      val maxLength = arr.map(_.length).max
+      val padRight = (i: String) => i + " " * (maxLength - i.length)
+      val padLeft = (j: String) => " " * (maxLength + 3 - j.length) + j
+      if (rightPadding) arr.map(padRight) else arr.map(padLeft)
+    }
+
+    println("Y is " + yColumnName + "\n")
+    
+    val names = "Name" +: xColumnNames :+ "(Intercept)"
+    // The formatting below chops each double to show only a few decimal places
+    val estimate = "Estimate" +: coefficients.map(x => f"$x%.6f".toString)
+    val stdErr = "Std. Error" +: standardErrors.map(x => f"$x%.6f".toString)
+    val tStat = "t value" +: tStatistics.toArray.map(x => f"$x%.3f".toString)
+    val pValue = "Pr(>|t|)" +: pValues.toArray.map(x => f"$x%.3f".toString)
+    
+    val cols = Array(standardizeLengths(names, rightPadding = true),
+                     standardizeLengths(estimate),
+                     standardizeLengths(stdErr),
+                     standardizeLengths(tStat),
+                     standardizeLengths(pValue)
+                    )
+                     
+    val printRow = (row: Array[String]) => (row :+ "\n").foreach(print)
+    cols.transpose.foreach(printRow)
   }
 }
