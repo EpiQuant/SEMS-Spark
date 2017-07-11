@@ -27,17 +27,17 @@ https://spark.apache.org/docs/2.0.1/api/java/org/apache/spark/ml/regression/Line
 
 Given Phenotype data Y and a set of SNP data {X1, x2, X3, ... XN}
 
-** Step 1 (Perform regressions) **
+**Step 1 (Perform regressions)**
 For each X:
   perform an ordinary least squares linear regression including X and any other Xs that were added to the model previously
 
-** Step 2 (Find the best regression model) **
+**Step 2 (Find the best regression model)**
 Of all of the linear regression models produced in Step 1, find the one whose most recently added term has the smallest p-value, and consider that X included in the model if it meets the p-value threshold (Thus ending the "Forward Step" portion of this iteration)
 
-** Step 3 (check for now insignificant terms) **
+**Step 3 (check for now insignificant terms)**
 Inspect the p-values of all of the other terms included in the best regression model found in Step 2. If any of those terms now have p-values that do not meet the threshold, remove them from the model and skip their evaluation on the next iteration of model building (but only for a single iteration: put them back in after the next iteration)
 
-** Return or repeat **
+**Return or repeat**
 if there are no more Xs under consideration and there was a term that was found to be insignificant in step 3, conduct one last regression with that term removed, and return that model
 
 else if there are no more Xs under consideration and nothing was found to be insignificant, return the best regression model found in Step 2
