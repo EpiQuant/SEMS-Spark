@@ -217,8 +217,8 @@ object DataFramePrototype {
     //val snp_df = Parser.CreateDataframe(spark, SNP_file, false, null)
     //val pheno_df = Parser.CreateDataframe(spark, pheno_file, false, null)
     
-    val SNP_file = "/Users/jacobheldenbrand/Documents/Spark_playground/Angela_test_data/1106_Markers_NAM_Kernel_Color_Families_Only_for_R_10SNPs.txt"
-    val pheno_file = "/Users/jacobheldenbrand/Documents/Spark_playground/Angela_test_data/Simulated.Data.100.Reps.Herit.0.5_1Pheno.txt"
+    val SNP_file = args(0) // "/Users/jacobheldenbrand/Documents/Spark_playground/Angela_test_data/1106_Markers_NAM_Kernel_Color_Families_Only_for_R_10SNPs.txt"
+    val pheno_file = args(1) //"/Users/jacobheldenbrand/Documents/Spark_playground/Angela_test_data/Simulated.Data.100.Reps.Herit.0.5_1Pheno.txt"
         
     val snp_df = Parser.CreateDataframe(spark, SNP_file, true, Array(1,2,3,4))
     val pheno_df = Parser.CreateDataframe(spark, pheno_file, false, null)
