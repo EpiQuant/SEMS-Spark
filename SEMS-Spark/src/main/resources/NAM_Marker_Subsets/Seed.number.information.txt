@@ -1,0 +1,8 @@
+Subset.Size	Number.of.Markers.Randomly.Selected	Seed.Number
+10	5	903315
+20	15	990852
+40	35	870470
+80	75	-745544
+160	155	-510195
+320	315	339348
+640	635	552792
