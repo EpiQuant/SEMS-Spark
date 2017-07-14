@@ -150,4 +150,48 @@ F-statistic: 51.05 on 3 and 1 DF,  p-value: 0.1024
     assertTrue(intercept > 2.351059 && intercept < 2.351061)
   }
   
+  @Test def multiStandardErrorTest {
+    val stdErr = OLSRegressionTest.multiReg.standardErrors
+    
+    assertEquals(stdErr.length, 4)
+    val X1 = stdErr(0)
+    val X2 = stdErr(1)
+    val X3 = stdErr(2)
+    val intercept = stdErr(3)
+    
+    assertTrue(X1 > 0.169189 && X1 < 0.169191)
+    assertTrue(X2 > 0.186495 && X2 < 0.186497)
+    assertTrue(X3 > 0.001899 && X3 < 0.001901)
+    assertTrue(intercept > 0.998612 && intercept < 0.998614)
+  }
+    
+  @Test def multiTStatisticTest {
+    val tStats = OLSRegressionTest.multiReg.tStatistics
+    
+    assertEquals(tStats.length, 4)
+    val X1 = tStats(0)
+    val X2 = tStats(1)
+    val X3 = tStats(2)
+    val intercept = tStats(3)
+    
+    assertTrue(X1 > 2.010 && X1 < 2.012)
+    assertTrue(X2 > -1.822 && X2 < -1.820)
+    assertTrue(X3 > 1.699 && X3 < 1.701)
+    assertTrue(intercept > 2.353 && intercept < 2.355)
+  }
+  
+  @Test def multiPValueTest {
+    val pVals = OLSRegressionTest.multiReg.pValues
+    
+    assertEquals(pVals.length, 4)
+    val X1 = pVals(0)
+    val X2 = pVals(1)
+    val X3 = pVals(2)
+    val intercept = pVals(3)
+    
+    assertTrue(X1 > 0.293 && X1 < 0.295)
+    assertTrue(X2 > 0.319 && X2 < 0.321)
+    assertTrue(X3 > 0.338 && X3 < 0.340)
+    assertTrue(intercept > 0.255 && intercept < 0.257)
+  }
 }

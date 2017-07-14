@@ -1,9 +1,15 @@
-package prototypes.rddprototype
+package converters
+
+import scala.collection.immutable.Map
 
 class Table(val table: Vector[Vector[Any]]) {
     
   def transpose: Table = {
     new Table(table.transpose)
+  }
+  
+  def saveTableAsTSV(path: String) {
+   
   }
   
   def printTable {
@@ -13,6 +19,63 @@ class Table(val table: Vector[Vector[Any]]) {
     }
   }
 
+  private[this] def invertMap(oldMap: Map[String,
+                              Vector[Double]]
+                             ): scala.collection.mutable.Map[Vector[Double], List[String]] = {
+    val newMap = scala.collection.mutable.Map.empty[Vector[Double], List[String]]
+    // Add the values mapped to empty vectors
+    oldMap.foreach{ x => newMap += (x._2 -> List.empty) }
+    // Add the old keys to the map in the value position
+    oldMap.foreach{ x => newMap(x._2) = newMap(x._2) :+ x._1 }
+    newMap
+  }
+  
+  lazy val printNames = (i: List[String]) => {
+    i.size match {
+      case 2 => print(i(0) + " and " + i(1))
+      case _ => {
+        i.dropRight(1).foreach(x => print(x + ", "))
+        print("and " + i.last)
+      }
+    }
+  }
+  
+  lazy val nameIndexMap = getColumnNames.zipWithIndex.toMap
+  
+  def filterRedundantColumns: Table = {
+
+    val colList = createColumnList
+    val valList = colList.map(_._2)
+    
+    // If there are any columns with identical values
+    if (valList.distinct.length < valList.length) {
+      // Invert map from colNames -> [values] to [values] -> List[colNames]
+      val inverted = invertMap(createColumnMap)
+            
+      val toDeleteLists: Iterable[List[String]] = for (key <- inverted.keys) yield {
+        val names = inverted(key)
+        if (names.length > 1) {
+          println("WARNING: These columns have identical values: ")
+          printNames(names)
+          println("\nAll but the first of these will be removed from the analysis")
+          names.drop(1) // All but the last are returned
+        }
+        else {
+          List() // This is just a placeholder
+        }
+      }
+      val toDelete = toDeleteLists.flatten.toArray
+      val toDeleteIndices = toDelete.map(nameIndexMap(_))
+    
+      // The :_* unpacks the contents of the array as arguments
+      this.deleteColumns(toDeleteIndices :_ *)
+    }
+    else {
+      // Do not change anything
+      this
+    }
+  }
+  
   /** Select a column based on the columns index, starting from 0 */
   def selectColumn(col: Int): Vector[Any] = {
     table.transpose.apply(col)
@@ -57,12 +120,12 @@ class Table(val table: Vector[Vector[Any]]) {
   def deleteColumns(columns: Int*): Table = {
     
     /** Filters specified columns out of the input row, and returns the filtered row
-     *  Count by 0
+     *  Count from 0
      */
-    def filterColumn(arr: Vector[Any], cols: Seq[Int]): Vector[Any] = {
+    val filterColumn = (arr: Vector[Any], cols: Seq[Int]) => {
       val zipped = arr.zipWithIndex
       val filtered = zipped.filterNot(x => cols.contains(x._2))
-      return filtered.map(_._1)
+      filtered.map(_._1)
     }
     
     val filtered = for (i <- 0 until table.length) yield {

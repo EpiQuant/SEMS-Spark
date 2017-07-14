@@ -8,9 +8,12 @@ class OLSRegression(val xColumnNames: Array[String],
                     val yColumnName: String, 
                     val Xs: scala.Vector[scala.Vector[Double]],
                     val Y: scala.Vector[Double]
-                   ) {
+                   ) extends java.io.Serializable {
   // Good summary of formula's used
   // http://www.stat.ucla.edu/~nchristo/introeconometrics/introecon_matrixform.pdf
+
+  xColumnNames.foreach(x => println("X cols: " + x))
+  xColumnNames.distinct.foreach(x => println("dist: " + x))
   
   private[this] val yAsBreezeVector = DenseVector(Y.toArray)
   
@@ -29,6 +32,28 @@ class OLSRegression(val xColumnNames: Array[String],
   val degreesOfFreedom = N - k
 
   private[this] val transposedX = XsWithZeroColumn.t
+  
+ // println("xColumn name length: " + xColumnNames.length)
+  //xColumnNames.foreach(x => print(x + ", "))
+  //println()
+  /*
+  println("\n\n\n\n\n\n\n\n\n\n\n")
+  for (row <- 0 until XsWithZeroColumn.rows) {
+    for (col <- 0 until XsWithZeroColumn.cols) {
+      print(XsWithZeroColumn(row, col) + ", ")
+    }
+    println
+  }
+  
+  val a = transposedX * XsWithZeroColumn
+  
+  println("\n\n\n\n\n\n\n\n\n\n\n")
+  for (row <- 0 until a.rows) {
+    for (col <- 0 until a.cols) {
+      print(a(row, col) + ", ")
+    }
+    println
+  }*/
   private[this] val inverseOfXtimesXt = inv(transposedX * XsWithZeroColumn)
 
   /** The estimates of the coefficients; the last entry is the estimate of the intercept */
@@ -70,7 +95,7 @@ class OLSRegression(val xColumnNames: Array[String],
     val pos = k - 1
     (0 until N).map(XsWithZeroColumn(_, pos)).toVector
   }
-  
+
   /** Prints a summary of the regression, in a format similar to R's summary */
   def printSummary {
     
@@ -88,7 +113,7 @@ class OLSRegression(val xColumnNames: Array[String],
     val estimate = "Estimate" +: coefficients.map(x => f"$x%.6f".toString)
     val stdErr = "Std. Error" +: standardErrors.map(x => f"$x%.6f".toString)
     val tStat = "t value" +: tStatistics.toArray.map(x => f"$x%.3f".toString)
-    val pValue = "Pr(>|t|)" +: pValues.toArray.map(x => f"$x%.3f".toString)
+    val pValue = "Pr(>|t|)" +: pValues.toArray.map(x => f"$x%.6f".toString)
     
     val cols = Array(standardizeLengths(names, rightPadding = true),
                      standardizeLengths(estimate),
