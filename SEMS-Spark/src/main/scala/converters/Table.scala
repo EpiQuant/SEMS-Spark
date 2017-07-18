@@ -1,6 +1,9 @@
 package converters
 
 import scala.collection.immutable.Map
+import java.io.File
+import java.io.BufferedWriter
+import java.io.FileWriter
 
 class Table(val table: Vector[Vector[Any]]) {
     
@@ -8,12 +11,26 @@ class Table(val table: Vector[Vector[Any]]) {
     new Table(table.transpose)
   }
   
-  def saveTableAsTSV(path: String) {
-   
+  private val rowToString = (input: Vector[Any]) => {
+    var string = ""
+    for (i <- 0 until input.length - 1) {
+      string = string + input(i).toString + "\t"
+    }
+    string = string + input.last.toString + "\n" 
+    string
+  }
+  
+  def saveTableAsTSV(file: File) {
+    val bw = new BufferedWriter(new FileWriter(file))
+    
+    this.table.foreach( x => {
+      bw.write(rowToString(x))
+    })
+    bw.close()
   }
   
   def printTable {
-    for (row <- table) {
+    for (row <- table.dropRight(table.size - 5)) {
       row.dropRight(1).foreach(entry => print(entry + "\t"))
       println(row.last)
     }

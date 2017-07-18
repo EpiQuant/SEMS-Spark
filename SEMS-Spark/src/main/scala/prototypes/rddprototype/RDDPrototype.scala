@@ -420,9 +420,14 @@ object RDDPrototype {
     //bestRegression.coefficients.foreach(println)
     bestRegression.printSummary
     
+    phenoTable.printTable
+    val a = phenoTable.deleteColumns(0)
+    a.printTable
+    
     val endTime = System.nanoTime()
     
-    println("Total time (seconds): " + ((endTime - startTime) / 1e9).toString )
+    println("Total time (seconds): " + ((endTime - startTime) / 1e9).toString)
+    
 
   }
   
