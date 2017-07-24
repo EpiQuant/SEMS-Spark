@@ -1,8 +1,8 @@
 package converters
 
-class PlinkFileParser(filePath: String,
-                      outputPath: String
-                     ) extends FileParser(filePath, outputPath) {
+import java.io.File
+
+abstract class PlinkFileParser(filePath: File) extends FileParser(filePath) {
 
   def saveParsedFile
   

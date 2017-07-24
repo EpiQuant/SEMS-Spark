@@ -1,7 +1,6 @@
 package statistics
 
 import breeze.linalg._
-import breeze.stats.regression.LeastSquaresRegressionResult
 import breeze.stats.distributions.StudentsT
 
 class OLSRegression(val xColumnNames: Array[String],

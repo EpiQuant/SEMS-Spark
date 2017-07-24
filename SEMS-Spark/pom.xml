@@ -63,10 +63,5 @@
   			0.13-d8f39f658cbc49f81c7a4f0c27e048af916262a7
   		</version>
   	</dependency>
-  	<dependency>
-		<groupId>com.ibm</groupId>
-  		<artifactId>gpu-enabler_2.11</artifactId>
-  		<version>1.0.0</version>
-  	</dependency>
   </dependencies>
 </project>
