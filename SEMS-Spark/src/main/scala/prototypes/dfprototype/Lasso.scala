@@ -18,6 +18,12 @@ import org.apache.log4j.Level
 import org.apache.spark.ml.feature.ElementwiseProduct
 import scala.collection.mutable.BitSet
 import scala.Option
+import prototypes.dfprototype.Parser
+import org.apache.spark.ml.linalg.{ DenseVector, DenseMatrix, Vector, Vectors}
+import breeze.linalg.{ *, DenseMatrix => BDM }
+import org.apache.spark.mllib.linalg.BLAS
+import scala.annotation.tailrec
+import org.apache.spark.rdd.RDD
 
 
 
@@ -58,17 +64,19 @@ object Lasso {
     )
  
   
-  def filterColumn(arr: Vector[String], cols: Array[Int]): Vector[String] = {
+/*  def filterColumn(arr: Vector[String], cols: Array[Int]): Vector[String] = {
     val zipped = arr.zipWithIndex
     val filtered = zipped.filterNot(x => cols.contains(x._2))
     return filtered.map(x => x._1)
-  }
+  }*/
   
   def main(args: Array[String]){
 
 Logger.getLogger("org").setLevel(Level.OFF)
 Logger.getLogger("akka").setLevel(Level.OFF)
-      val parser = new OptionParser[Params]("epiquant") {
+
+run(args)
+  /*    val parser = new OptionParser[Params]("epiquant") {
       head("EPIQUANT: an statsistical analysis for GWAS data in SPARK/scala.")
       opt[String]('s', "snpFile")
         .valueName("<snp file>")
@@ -121,7 +129,7 @@ Logger.getLogger("akka").setLevel(Level.OFF)
       case _ => sys.exit(1)
     }
     
-    
+    */
     
   }
   
@@ -134,14 +142,14 @@ Logger.getLogger("akka").setLevel(Level.OFF)
     result._1
 }
   
-  def run(params: Params){
+  def run(args: Array[String]){
      val spark = SparkSession
       .builder()
-      .appName("Parser")
+      .appName("Lasso")
       .master("local")
       .getOrCreate()
   
-     val snp = CreateDataframe(spark, params.snpFile, params.t1, params.snpRmCols)
+    /* val snp = CreateDataframe(spark, params.snpFile, params.t1, params.snpRmCols)
      
      // want to be able to include certain snps for sure.
      
@@ -156,9 +164,24 @@ Logger.getLogger("akka").setLevel(Level.OFF)
       val df1 = LassoRegression("Samples", pairwiseSnp, onephe, "Trait1", 0.00001)
       val df2 = LassoRegression("Samples", pairwiseSnp, onephe, "Trait1", 0.001)
       val df3 = LassoRegression("Samples", pairwiseSnp, onephe, "Trait1", 0.01)
-      spark.stop()
+      spark.stop()*/
+      
+      val denseRDD = Parser.parser(spark, args)
+      val initialWeights = 0
+        
+
+      
+    //  val a  = optimize(denseRDD, )
       
   }
+  
+  /*def optimize(data: RDD[(DenseVector, DenseMatrix)], initialWeights: Vector, 
+      xy: Array[Double], lambdas: Array[Double], alpha: Double, lamShrnk: Double, 
+      maxIter: Int, tol: Double, numFeatures: Int, numRows: Long): List[(Double, Vector)] = {
+    
+    List[(0.0, new Vector(0,0,0))]
+    
+  }*/
   
   def makePairwise(df: DataFrame, n: Int, features: Array[String]): DataFrame = {
  
@@ -190,6 +213,24 @@ Logger.getLogger("akka").setLevel(Level.OFF)
     assembler.transform(pairwise)
   }
   
+ /* private def normalizeDataSet(dataset: DataFrame): (RDD[(Double, Vector)], StandardScalerModel) = {
+    val instances = extractLabeledPoints(dataset).map {
+      case LabeledPoint(label: Double, features: Vector) => Vectors.dense(label +: features.toArray)
+    }
+
+    val scalerModel = new StandardScaler(withMean = true, withStd = true)
+      .fit(instances)
+
+    val normalizedInstances = scalerModel
+      .transform(instances)
+      .map(row => (row.toArray.take(1)(0), Vectors.dense(row.toArray.drop(1))))
+
+    (normalizedInstances, scalerModel)
+  }*/
+  
+  private def fit(dataset: DataFrame){
+    // val (normalizedInstances, scalerModel) = normalizeDataSet(dataset)
+  }
   
  def UpMIndex(n: Int): Array[Int] ={
   var count = 0
