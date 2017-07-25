@@ -4,6 +4,11 @@ import scopt.OptionParser
 import scala.io.Source
 import scala.util.control.Breaks._
 
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.Path
+import java.net.URI
+
 //import prototypes.dfprototype.RowPartionedTransformer
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
@@ -133,8 +138,24 @@ object Parser {
       val snp_f = args(0)
       val phe_f = args(1)
 
-      spark.sparkContext.addFile(snp_f )//"resources/sampleSNP.txt")
-      spark.sparkContext.addFile(phe_f) //"resources/Simulated.Data.100.Reps.Herit.0.5_Phe1.txt")
+//      spark.sparkContext.addFile(snp_f )//"resources/sampleSNP.txt")
+//      spark.sparkContext.addFile(phe_f) //"resources/Simulated.Data.100.Reps.Herit.0.5_Phe1.txt")
+
+// val snp_file = SparkFiles.get(snp_f)
+//println("I am hererererere!")
+//println(snp_file)
+// val phe_file = SparkFiles.get(phe_f)
+//println(phe_file)
+
+
+//val hdfs = FileSystem.get(new URI("hdfs://aforge015-ib-priv.local:8020/"), new Configuration())
+//val snp_path = new Path("user/xnie8/resources/1106_Markers_NAM_Kernel_Color_Families_Only_for_R.txt")//args(0))
+//val phe_path = new Path("user/xnie8/resources/Simulated.Data.100.Reps.Herit.0.5_Phe1.txt")
+
+//val snp_stream = hdfs.open(snp_path)
+//def readSNPs = Stream.cons(snp_stream.readLine, Stream.continually(snp_stream.readLine))
+//val data = readSNPs.takeWhile(_!= null).map(_.split("\t")).toArray
+
       val data = Source.fromFile(snp_f).getLines().map(_.split("\t")).toArray
       val samples = data(0).drop(5)
       val snp_names = data.drop(1).map(x => x(0))
@@ -147,7 +168,12 @@ object Parser {
           ret
         }
       }*/
-      
+     
+
+//val phe_stream = hdfs.open(phe_path)
+//def readPhe = Stream.cons(phe_stream.readLine, Stream.continually(phe_stream.readLine))
+//val phefile = readPhe.takeWhile(_!= null).map(_.split("\t")).toArray
+
       val phefile = Source.fromFile(phe_f).getLines().map(_.split("\t")).toArray
       val phe_samples = phefile.drop(1).map(x => x(0))
       val phe_names = phefile(0).drop(1)
@@ -165,13 +191,11 @@ object Parser {
       
       
      
-     val snp_darray = data.drop(1).map(x => x.drop(5).map(_.toDouble)).transpose
-    // snp_darray.map(x=> x =>
+     val snp_darray = data.drop(1).map(x => x.drop(5).map(_.toDouble)).transpose   
 
-     
      //println("SNP: m", snp_darray.length, "n/D", snp_darray(0).length )
      val stick = for (i <- 0 to snp_darray.length-1) yield {
-       snp_darray(i)++phe_vales_array(i)
+       (snp_darray(i),phe_vales_array(i))
      }
      // println("stick: m", stick.length, "n/D", stick(0).length )
       
@@ -180,18 +204,20 @@ object Parser {
     // println("partition", part)
       //TODO:
      //construct the matrix snp_matrix(i)
-     val values = rdd.mapPartitions{
-       x => {
+     val values = rdd.mapPartitionsWithIndex{
+       (indx, x) => {
           //TODO: val x_duplicate = x.duplicate
-         var snp_1 : Array[Double] = Array()
-         var phe_2 : Array[Double] = Array()
-         var num_rows = 0
-         while(x.hasNext){
-           num_rows+=1
+         val snp_1 : Array[Array[Double]] = new Array[Array[Double]](samples.length/part+1)
+         val phe_2 : Array[Array[Double]] = new Array[Array[Double]](samples.length/part+1)
+        val n = snp_names.length 
+	var num_rows = 0
+         
+	while(x.hasNext){
 	   val temp = x.next
-           snp_1 = snp_1 ++ temp.slice(0, snp_names.length)
-           phe_2 = phe_2 ++ temp.slice(snp_names.length, snp_names.length+phe_names.length)
-         }
+           snp_1(num_rows) = temp._1
+           phe_2(num_rows) = temp._2
+	   num_rows+=1
+	  }
          // println("SNP: m", snp_1.length, "n/D", snp_1(0).length )
          // println("PHE: m", phe_2.length, "n/D", phe_2(0).length , num_rows)
           
@@ -200,21 +226,30 @@ object Parser {
         //  println(phe_2.length)
           //println(num_rows, snp_names.length, phe_names.length)
          // println("paritition",idx,"num samples",num_rows)
-         
-         
-         val snp_matrix = new BDM[Double](num_rows, snp_names.length, snp_1)
-         val phe_matrix = new BDM[Double](num_rows, phe_names.length, phe_2)
-         val n = snp_matrix.cols
-         val vectors = for (i <- 0 until n-1) yield {
-           val ret = for (j <- i until n) yield{
-             (snp_matrix(::, i) * snp_matrix(::, j)).toArray
-           }
-           ret.flatten
+    
+         val snp_matrix = BDM.zeros[Double](num_rows, (n*(n+1)/2))
+         val phe_matrix = BDM.zeros[Double](num_rows, phe_names.length)
+        
+         val vectors = for (k <- 0 until num_rows) {
+		var c = n
+		for (i <- 0 until n-1) {
+           	   for (j <- i+1 until n) {	
+			snp_matrix(k, c) = snp_1(k)(i) * snp_1(k)(j)
+			c+=1
+		   }
+
+           	}
+		for (i <- 0 until phe_names.length) {
+			phe_matrix(k, i) = phe_2(k)(i)
+		}
         }
-        val a = new BDM[Double](num_rows, n*(n+1)/2, vectors.flatten.toArray)
-        Iterator((BDM.horzcat(snp_matrix,a), phe_matrix, num_rows))
+	//vectors.flatten
+//	val a = BDM(vectors.flatten:_*)
+//	println("pairwise dim", a.rows, a.cols)
+        //val a = new BDM[Double](num_rows, (n*(n+1)/2-n), vectors.flatten.toArray)
+        Iterator((snp_matrix, phe_matrix, num_rows))
        }   
-     }.cache()
+     }//.cache()
      
     /* Merged with previous map 
      * val pairwise = values.mapPartitions{
@@ -224,7 +259,7 @@ object Parser {
          val n = snp_matrix.cols
          val vectors = for (i <- 0 until n-1) yield {
            for (j <- i until n) yield{
-             snp_matrix(::, i) * snp_matrix(::, j)
+             snp_matrix(::, i) dot snp_matrix(::, j)
            }
         }
         val a =  vectors.flatten  
@@ -236,7 +271,8 @@ object Parser {
 
      
      var rho = 1.0;
-     val D = snp_names.length
+     val n = snp_names.length
+     val D = n*(n+1)/2
      val maxIter = 100
      val lambda = 0.5
      val absTol = 1e-4
@@ -260,7 +296,7 @@ object Parser {
 
 	//println("snp", snp_matrix.rows, snp_matrix.cols, snp_matrix.data.length)         
           val Atb = snp_matrix.t*phe_matrix(::, 0)//.map(dv => (snp_matrix.t *dv))
-         
+     //   println(Atb.size) 
           var L =  new BDM(1, 1, Array(0.0))
           if (skinny){
             //Compute the matrix A: A = chol(AtA + rho*I) 
