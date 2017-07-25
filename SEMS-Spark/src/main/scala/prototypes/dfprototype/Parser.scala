@@ -166,6 +166,9 @@ object Parser {
       
      
      val snp_darray = data.drop(1).map(x => x.drop(5).map(_.toDouble)).transpose
+    // snp_darray.map(x=> x =>
+
+     
      //println("SNP: m", snp_darray.length, "n/D", snp_darray(0).length )
      val stick = for (i <- 0 to snp_darray.length-1) yield {
        snp_darray(i)++phe_vales_array(i)
@@ -197,10 +200,39 @@ object Parser {
         //  println(phe_2.length)
           //println(num_rows, snp_names.length, phe_names.length)
          // println("paritition",idx,"num samples",num_rows)
-          Iterator((new BDM[Double](num_rows, snp_names.length, snp_1), new BDM[Double](num_rows, phe_names.length, phe_2), num_rows))
-       }
          
+         
+         val snp_matrix = new BDM[Double](num_rows, snp_names.length, snp_1)
+         val phe_matrix = new BDM[Double](num_rows, phe_names.length, phe_2)
+         val n = snp_matrix.cols
+         val vectors = for (i <- 0 until n-1) yield {
+           val ret = for (j <- i until n) yield{
+             (snp_matrix(::, i) * snp_matrix(::, j)).toArray
+           }
+           ret.flatten
+        }
+        val a = new BDM[Double](num_rows, n*(n+1)/2, vectors.flatten.toArray)
+        Iterator((BDM.horzcat(snp_matrix,a), phe_matrix, num_rows))
+       }   
      }.cache()
+     
+    /* Merged with previous map 
+     * val pairwise = values.mapPartitions{
+       x => {
+         //val full = new BDM[Double](num_rows, n*(n+1)/2), full array)
+         val snp_matrix = x.next._1
+         val n = snp_matrix.cols
+         val vectors = for (i <- 0 until n-1) yield {
+           for (j <- i until n) yield{
+             snp_matrix(::, i) * snp_matrix(::, j)
+           }
+        }
+        val a =  vectors.flatten  
+        val ret = BDM.horzcat(snp_matrix,BDM(a))
+        
+       }
+     }
+     */
 
      
      var rho = 1.0;
