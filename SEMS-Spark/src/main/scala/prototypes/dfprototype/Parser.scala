@@ -20,9 +20,9 @@ import org.apache.spark.ml.feature.LabeledPoint
 import org.apache.spark.mllib.linalg.{ DenseVector, DenseMatrix, Vector, Vectors}
 //import org.apache.spark.mllib.linalg.{ DenseMatrix, DenseVector}
 import breeze.linalg.{DenseVector => BDV, SparseVector => BSV, Vector => BV,  DenseMatrix => BDM , Matrix => BM}
-import org.apache.spark.mllib.linalg.CholeskyDecomposition
-import prototypes.dfprototype.BLAS
-import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
+//import org.apache.spark.mllib.linalg.CholeskyDecomposition
+//import prototypes.dfprototype.BLAS
+//import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
 import breeze.linalg._
 import breeze.linalg.functions._
 import breeze.optimize.proximal.QuadraticMinimizer
@@ -84,11 +84,11 @@ object Parser {
   }
   
   def main(args: Array[String]){
-   // Logger.getLogger("org").setLevel(Level.OFF)
-  // Logger.getLogger("akka").setLevel(Level.OFF)
+    Logger.getLogger("org").setLevel(Level.OFF)
+   Logger.getLogger("akka").setLevel(Level.OFF)
       val spark = org.apache.spark.sql.SparkSession.builder
       .appName("Parser")
-      .master("local")
+      //.master("local")
       .getOrCreate()
     val a = parser(spark, args)
       
@@ -130,11 +130,12 @@ object Parser {
    }
   def parser(spark: SparkSession, args: Array[String]) = {
        // val temp = args(0).split(" ")  
+      val snp_f = args(0)
+      val phe_f = args(1)
 
-
-      spark.sparkContext.addFile("resources/sampleSNP.txt")
-      spark.sparkContext.addFile("resources/Simulated.Data.100.Reps.Herit.0.5_Phe1.txt")
-      val data = Source.fromFile("resources/sampleSNP.txt").getLines().map(_.split("\t")).toArray
+      spark.sparkContext.addFile(snp_f )//"resources/sampleSNP.txt")
+      spark.sparkContext.addFile(phe_f) //"resources/Simulated.Data.100.Reps.Herit.0.5_Phe1.txt")
+      val data = Source.fromFile(snp_f).getLines().map(_.split("\t")).toArray
       val samples = data(0).drop(5)
       val snp_names = data.drop(1).map(x => x(0))
       var i = 0
@@ -147,7 +148,7 @@ object Parser {
         }
       }*/
       
-      val phefile = Source.fromFile("resources/Simulated.Data.100.Reps.Herit.0.5_Phe1.txt").getLines().map(_.split("\t")).toArray
+      val phefile = Source.fromFile(phe_f).getLines().map(_.split("\t")).toArray
       val phe_samples = phefile.drop(1).map(x => x(0))
       val phe_names = phefile(0).drop(1)
       //val phe_vales = phefile.drop(1).flatMap(x => x.drop(1).map(_.toDouble))
@@ -155,8 +156,8 @@ object Parser {
         x => x.drop(1).map(_.toDouble)
       }
       
-      println(phe_samples.length)
-      println(phe_names.length)
+      //println(phe_samples.length)
+      //println(phe_names.length)
       
       //val phevals = new DenseMatrix(phe_samples.length, phe_names.length, phe_vales, true)
       //val colIter = phevals.colIter
@@ -165,15 +166,15 @@ object Parser {
       
      
      val snp_darray = data.drop(1).map(x => x.drop(5).map(_.toDouble)).transpose
-     println("SNP: m", snp_darray.length, "n/D", snp_darray(0).length )
+     //println("SNP: m", snp_darray.length, "n/D", snp_darray(0).length )
      val stick = for (i <- 0 to snp_darray.length-1) yield {
        snp_darray(i)++phe_vales_array(i)
      }
-      println("stick: m", stick.length, "n/D", stick(0).length )
+     // println("stick: m", stick.length, "n/D", stick(0).length )
       
      val rdd = spark.sparkContext.parallelize(stick)
      val part = rdd.getNumPartitions
-     println("partition", part)
+    // println("partition", part)
       //TODO:
      //construct the matrix snp_matrix(i)
      val values = rdd.mapPartitions{
@@ -184,18 +185,19 @@ object Parser {
          var num_rows = 0
          while(x.hasNext){
            num_rows+=1
-           snp_1 = snp_1 ++ x.next.slice(0, snp_names.length)
-           phe_2 = phe_2 ++ x.next.slice(snp_names.length, snp_names.length+phe_names.length)
+	   val temp = x.next
+           snp_1 = snp_1 ++ temp.slice(0, snp_names.length)
+           phe_2 = phe_2 ++ temp.slice(snp_names.length, snp_names.length+phe_names.length)
          }
          // println("SNP: m", snp_1.length, "n/D", snp_1(0).length )
          // println("PHE: m", phe_2.length, "n/D", phe_2(0).length , num_rows)
           
           //TODO: unnecessary passing of data n . see if can extract from BDM dimension
-          println(snp_1.length)
-          println(snp_1(0).length)
-          println(num_rows)
+      //    println("SNP: m", snp_1.length, "n", snp_names.length)
+        //  println(phe_2.length)
+          //println(num_rows, snp_names.length, phe_names.length)
          // println("paritition",idx,"num samples",num_rows)
-          Iterator((BDM(snp_1:_*), BDM(phe_2:_*), num_rows))
+          Iterator((new BDM[Double](num_rows, snp_names.length, snp_1), new BDM[Double](num_rows, phe_names.length, phe_2), num_rows))
        }
          
      }.cache()
@@ -207,16 +209,15 @@ object Parser {
      val lambda = 0.5
      val absTol = 1e-4
      val relTol = 1e-2
-
       var cholesky_A = values.mapPartitionsWithIndex{
         (index, iterator) => {
           var i =0
-          println(i)
+        //  println(i)
           var g = iterator.next
-          while(iterator.hasNext){
-            i+=1
-            println(i) //make sure only 1 matrix per partition
-          }
+         // while(iterator.hasNext){
+           // i+=1
+           // println(i) //make sure only 1 matrix per partition
+         // }
           val snp_matrix = g._1
           val phe_matrix = g._2
           val n = g._3 //number of samples in this partition
@@ -224,8 +225,9 @@ object Parser {
           var rho = 1.0
           val skinny = (n >=D)
           //TODO compare with breeze matrix vector multiplication speed
-          
-          val Atb = phe_matrix(::, *).map(dv => (snp_matrix.t *dv))
+
+	//println("snp", snp_matrix.rows, snp_matrix.cols, snp_matrix.data.length)         
+          val Atb = snp_matrix.t*phe_matrix(::, 0)//.map(dv => (snp_matrix.t *dv))
          
           var L =  new BDM(1, 1, Array(0.0))
           if (skinny){
@@ -254,7 +256,7 @@ object Parser {
           
          
          //TODO find out a way to map Atb
-          Iterator((L, Atb(::,0), n, x, u, zprev, snp_matrix))
+          Iterator((L, Atb, n, x, u, zprev, snp_matrix))
         }
      } 
      
@@ -269,16 +271,17 @@ object Parser {
      val N = 4 //num of partitions
      
      val startTime = System.nanoTime()
-     while(iter < maxIter){
+     breakable { while(iter < maxIter){
+	//println("-----------------begin while loop-------------")
         cholesky_A = cholesky_A.mapPartitions{
           iterator => {
-                      var i =0
-          println(i)
-          var g = iterator.next
-          while(iterator.hasNext){
-            i+=1
-            println(i) //make sure only 1 matrix per partition
-          }
+            //          var i =0
+          //println(i)
+          //var g = iterator.next
+          //while(iterator.hasNext){
+          //  i+=1
+          //  println(i) //make sure only 1 matrix per partition
+         // }
           val G = iterator.next()
           
           val L =G._1
@@ -334,11 +337,11 @@ object Parser {
               val x = A._4
               val z = bc_z.value
               val u = A._5
- 
+              
               val r = x-z
-              val r_sq = r dot r
-              val x_sq = x dot x
-              val u_sq = (u dot u)/(rho*rho)
+		val r_sq = r.data.map(x => x*x).reduce(_+_)
+              val x_sq = x.data.map(x => x*x).reduce(_+_)
+              val u_sq = (u.data.map(x => x*x).reduce(_+_))/(rho*rho)
               
             Array(r_sq, x_sq, u_sq)
           }
@@ -353,7 +356,7 @@ object Parser {
         }.treeReduce(_+_, 2)
         
         zprev := bc_z.value
-        z := soft_threshold(new_z*(1.0/N), lambda/(N*rho))
+        z := BDV(soft_threshold(new_z*(1.0/N), lambda/(N*rho)))
         bc_z = cholesky_A.sparkContext.broadcast(z)
  
         
@@ -373,18 +376,18 @@ object Parser {
     	 }
      	 iter+=1
      }//end while
-     
+    }//end breakable 
      val elapsedTime = (System.nanoTime() - startTime) / 1e9
      
      println(s"Training time: $elapsedTime seconds")
-     println(println(s"Coefficients: ${z.data}"))
-     
+     z.data.foreach(println)
+	spark.stop()
     		  
   } //end parser
  
 
   def soft_threshold(v: BDV[Double], k: Double) = {
-    v.map{ vi => {
+    v.data.map{ vi => {
         if(vi > k) vi-k
         else if (vi < -k) vi+k 
         else 0 }
