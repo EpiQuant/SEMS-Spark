@@ -32,8 +32,8 @@ object test {
     val m = samples.length/num_part
     val n = snp_names.length
     
-    val solver = new ADMM()
-    val fit = solver.fit(dataset, 0, m, n*(n+1)/2, num_part, 100, 0.5, 1.0, 1e-4, 1e-2)
+   // val solver = new ADMM()
+    //val fit = solver.fit(dataset, 0, m, n*(n+1)/2, num_part, 100, 0.5, 1.0, 1e-4, 1e-2)
     
   }
 }
@@ -42,7 +42,24 @@ class Lasso{
   
 }
 
-class ADMM extends Lasso {
+object ADMM{
+
+    def main(args: Array[String]) {
+    Logger.getLogger("org").setLevel(Level.OFF)
+    Logger.getLogger("akka").setLevel(Level.OFF)
+    val spark = org.apache.spark.sql.SparkSession.builder
+      .appName("LASSO regression")
+      .getOrCreate()
+       
+    val (dataset, snp_names, phe_names, samples) = Parser.parse(spark, args)
+    val num_part = dataset.getNumPartitions
+    val m = samples.length/num_part
+    val n = snp_names.length
+    
+   // val solver = new ADMM()
+    fit(dataset, 0, n*(n+1)/2, 100, 0.5, 1.0, 1e-4, 1e-2)
+    
+  }
    /* dataset: RDD of y and X
    * n: number of samples
    * d: dimensionality, or number of SNPs
@@ -58,8 +75,9 @@ class ADMM extends Lasso {
      val n = snp_names.length
      val D = n*(n+1)/2*/
   
-  def fit(dataset: RDD[(BDM[Double], BDM[Double], Int)], Phe: Int, n: Int, D: Int, num_part: Int, maxIter: Int, lambda: Double, rho: Double, absTol: Double, relTol: Double){
-
+  
+  def fit(dataset: RDD[(BDM[Double], BDM[Double], Int)], Phe: Int, D: Int, maxIter: Int, lambda: Double, rho: Double, absTol: Double, relTol: Double){
+      val num_part = dataset.getNumPartitions
       var cholesky_A = dataset.mapPartitions{
         iterator => {
           val g = iterator.next
@@ -77,15 +95,15 @@ class ADMM extends Lasso {
           if (skinny){
             //Compute the matrix A: A = chol(AtA + rho*I) 
             val AtA = snp_matrix.t * snp_matrix//new DenseMatrix(D, D, Array.fill[Double](D*D)(0))
-            val rhoI = BDM.eye[Double](n)
+            val rhoI = BDM.eye[Double](D)
             rhoI*=rho
-            L = cholesky(AtA + rhoI)
+            L = cholesky(AtA + rhoI) /* AtA+rhoI = L*L**T.*/
           } else{
             //compute the matrix L : L = chol(I + 1/rho*AAt) 
             val AAt = snp_matrix * snp_matrix.t
             AAt *= 1/rho
-            val eye = BDM.eye[Double](n)
-            L = cholesky(AAt+eye)
+            val eye = BDM.eye[Double](num_rows)
+            L = cholesky(AAt+eye)   /* AAt+I = L*L**T.*/
           }
           
          val x = BDV.zeros[Double](D)   
@@ -93,21 +111,23 @@ class ADMM extends Lasso {
          val zprev = BDV.zeros[Double](D)
  
          //TODO find out a way to map Atb
-          Iterator((L, Atb, n, x, u, zprev, snp_matrix))
+          Iterator((L, Atb, num_rows, x, u, zprev, snp_matrix))
         }
      }.persist(storage.StorageLevel.MEMORY_AND_DISK) 
      
      val zprev = BDV.zeros[Double](D)
-     val zdiff = BDV.zeros[Double](D)
+     //val zdiff = BDV.zeros[Double](D)
      val z = BDV.zeros[Double](D)
      var iter = 0  
      var prires = 0.0
      var nxstack = 0.0
      var nystack = 0.0
      var bc_z = cholesky_A.sparkContext.broadcast(z)
-     val N = num_part //num of partitions
      
      val startTime = System.nanoTime()
+     
+  
+     
      breakable { while(iter < maxIter){
         cholesky_A = cholesky_A.mapPartitions{
           iterator => {
@@ -122,30 +142,29 @@ class ADMM extends Lasso {
           
           val L =G._1
           val Atb = G._2
-          val m = G._3
+          val num_rows = G._3
           val x = G._4
-         // val z = G._5
           val z = bc_z.value
           val u = G._5
           val zprev = z.copy
           val A = G._7 //snp_matrix
-          val skinny = m >= D
+          val skinny = num_rows >= D
           
           // u-update: u = u + x - z
-           u+=x
-           u-=z
+           u:+=x
+           u:-=z
           // x-update: x = (A^T A + rho I) \ (A^T b + rho z - y) 
           val q = z.copy
           q:-=u
           q:*=rho
-          q :+=Atb 
+          q:+=Atb 
           
           if(skinny){
             solve( L, q, x )
           }else{
             //val Aq = BDV.zeros[Double](n) // new DenseVector(Array.fill[Double](N)(0))
             //QuadraticMinimizer.gemv(1, L, q, 0, Aq)
-            val p = BDV.zeros[Double](m)
+            val p = BDV.zeros[Double](num_rows)
             val Aq = A*q
             solve(L, Aq, p)
             //BLAS.gemv(1, fromBreeze(A), fromBreeze(q), 0, Aq)
@@ -156,8 +175,9 @@ class ADMM extends Lasso {
             q:*= 1/rho
             x:+=q  
           }
+         
           
-          Iterator((L, Atb, m, x, u, zprev, A))
+          Iterator((L, Atb, num_rows, x, u, zprev, A))
         }
           
       }//end MapPartition
@@ -173,7 +193,7 @@ class ADMM extends Lasso {
               val u = A._5
               
               val r = x-z
-		val r_sq = r.data.map(x => x*x).reduce(_+_)
+		          val r_sq = r.data.map(x => x*x).reduce(_+_)
               val x_sq = x.data.map(x => x*x).reduce(_+_)
               val u_sq = (u.data.map(x => x*x).reduce(_+_))/(rho*rho)
               
@@ -190,35 +210,52 @@ class ADMM extends Lasso {
         }.treeReduce(_+_, 2)
         
         zprev := bc_z.value
-        z := BDV(soft_threshold(new_z*(1.0/N), lambda/(N*rho)))
+        z := BDV(soft_threshold(new_z*(1.0/num_part), lambda/(num_part*rho)))
         bc_z = cholesky_A.sparkContext.broadcast(z)
  
         
-            prires  = sqrt(recv(0))  /* sqrt(sum ||r_i||_2^2) */
-    		    nxstack = sqrt(recv(1))  /* sqrt(sum ||x_i||_2^2) */
-     		    nystack = sqrt(recv(2))  /* sqrt(sum ||y_i||_2^2) */
+        prires  = sqrt(recv(0))  /* sqrt(sum ||r_i||_2^2) */
+    	  nxstack = sqrt(recv(1))  /* sqrt(sum ||x_i||_2^2) */
+     		nystack = sqrt(recv(2))  /* sqrt(sum ||y_i||_2^2) */
+     		//primal and dual feasibility tolerance
+     		val eps_pri = sqrt(D*num_part)*absTol + relTol * max(nxstack, sqrt(num_part)*norm(z))
+   		  val eps_dual = sqrt(D*num_part)*absTol + relTol * nystack
+   		   val zdiff = z-zprev
+ 		      val dualres = sqrt(num_part)*rho * norm(zdiff)
      
-        zdiff := z-zprev
- 		   val dualres = sqrt(N)*rho * norm(zdiff)
- 		   
- 		   //primal and dual feasibility tolerance
- 		   val eps_pri = sqrt(D*N)*absTol + relTol * max(nxstack, sqrt(N)*norm(z))
- 		   val eps_dual = sqrt(D*N)*absTol + relTol * nystack
-
- 		   if (prires <= eps_pri && dualres <= eps_dual) {
+     	
+     	
+     	 dataset.mapPartitionsWithIndex{
+     	   (idx, iterator) => {
+     	     val G = iterator.next
+     	    val snp_matrix = G._1
+     	    val b = G._2(::, Phe)
+     	    println(idx, iter, prires, eps_pri, dualres, eps_dual, objective(snp_matrix, b, lambda, z))
+     	   }
+     	     Iterator(eps_pri)
+        }
+        
+ 		     if (prires <= eps_pri && dualres <= eps_dual) {
      		 break
-    	 }
-     	 iter+=1
+    	   }
+ 		      
+ 		     iter+=1
      }//end while
     }//end breakable 
      val elapsedTime = (System.nanoTime() - startTime) / 1e9
      
      println(s"Training time: $elapsedTime seconds")
-     z.data.foreach(println)
-	  
+     z.data.foreach(println) 
   }
  
-  
+  def objective(A: BDM[Double], b: BDV[Double], lambda: Double, z: BDV[Double]) = {
+
+      val Az = A*z
+      val Azb = Az-b
+      val Azb_nrm2 = Azb.data.map(x => x*x).reduce(_+_)
+      val obj = 0.5 * Azb_nrm2 + lambda * z.data.map(x => abs(x)).reduce(_+_)
+      obj
+  }
   def soft_threshold(v: BDV[Double], k: Double) = {
     v.data.map{ vi => {
         if(vi > k) vi-k
