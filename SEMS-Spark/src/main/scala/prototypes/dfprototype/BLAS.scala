@@ -261,7 +261,7 @@ object BLAS{
     while (i < mA) {
       var j = i + 1
       while (j < nA) {
-        A(j, i) = A(i, j)
+      // A(j, i) = A(i, j)
         j += 1
       }
       i += 1

@@ -24,6 +24,7 @@ import breeze.linalg.{ *, DenseMatrix => BDM }
 import org.apache.spark.mllib.linalg.BLAS
 import scala.annotation.tailrec
 import org.apache.spark.rdd.RDD
+import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
 
 
 
@@ -252,6 +253,7 @@ run(args)
   arr.toArray
   
 }
+ 
 
   def LassoRegression(Trait:String, snp: DataFrame, onephe: DataFrame, LabelCol: String, regParam: Double): DataFrame = {
      
@@ -355,6 +357,52 @@ val transposed = byColumn.map {
    
     RegressData(df=spark.createDataFrame(rowRDD, schema), Untested = header.drop(1))
   }
+}
+
+class CoordinateDescent{
+  /* dataset: RDD of y and X
+   * n: number of samples
+   * d: dimensionality, or number of SNPs
+   * lambda: regParam
+   * tol: convergence tolerence level
+   */
+  def fit(X:RDD[IndexedRow], y: DenseVector,  n: Int, d: Int, lambda: Double, tol: Double, maxIter: Int) = {
+     val w = Array.fill[Double](d)(0); //Initialize array of 0 of size d for coefficients. 
+     var prires: Double = 0; //primal residual
+     var iter = 0
+     val z = X.context.broadcast(y)
+     def layout(x: Double) = n + d +x
+     while (iter < maxIter){
+       val a = X.mapPartitionsWithIndex{
+         (index, iterator) => {
+           val y = z.value
+           //iterator
+           println("index", index)
+           //val x = new DenseVector(Array(0.0,0.0))
+           //val g = BLAS.gemv(1.0, A, x, 1.0, y)
+            while (iterator.hasNext) 
+              println(iterator.next())
+            Iterator(Int)
+           }
+       }
+         iter+=1    
+     }
+    
+  }
+  
+  
+  def soft_threshold(v: Array[Double], j: Int, lambda: Double, rho: Double) = {
+     if (rho > lambda/2){
+       v(j) = (rho-lambda/2)
+     }
+     else if (rho < -lambda/2){
+       v(j) = (rho+lambda/2)
+     }
+     else v(j) =0
+  }
+  
+  
+  
 }
 
 
