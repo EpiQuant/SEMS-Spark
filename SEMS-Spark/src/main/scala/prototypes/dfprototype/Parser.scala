@@ -2,7 +2,7 @@ package prototypes.dfprototype
 
 import scopt.OptionParser
 import scala.io.Source
-import scala.util.control.Breaks._
+
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
@@ -12,7 +12,6 @@ import java.net.URI
 //import prototypes.dfprototype.RowPartionedTransformer
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
-import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark._
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
@@ -21,21 +20,13 @@ import org.apache.spark.ml.regression._
 import scala.reflect.runtime.universe._
 import scala.reflect.runtime.universe
 import scala.reflect._
-import org.apache.spark.ml.feature.LabeledPoint
 import org.apache.spark.mllib.linalg.{ DenseVector, DenseMatrix, Vector, Vectors}
-//import org.apache.spark.mllib.linalg.{ DenseMatrix, DenseVector}
+
 import breeze.linalg.{DenseVector => BDV, SparseVector => BSV, Vector => BV,  DenseMatrix => BDM , Matrix => BM}
-//import org.apache.spark.mllib.linalg.CholeskyDecomposition
-//import prototypes.dfprototype.BLAS
-//import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
-import breeze.linalg._
-import breeze.linalg.functions._
-import breeze.optimize.proximal.QuadraticMinimizer
-import breeze.numerics._
 
 //import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.ml.feature.StandardScaler
+
 
 
 abstract class AbstractParams[T: TypeTag] {
@@ -59,82 +50,78 @@ abstract class AbstractParams[T: TypeTag] {
 
 
 object Parser {
-    case class Params(
+   /* case class Params(
       input: String = null,
       dataFormat: String = "libsvm",
       regParam: Double = 0.0,
       unwantedColumns: String = ""//,
-      ) extends AbstractParams[Params]
+      ) extends AbstractParams[Params]*/
+    
+    case class Params(
+      snpFile: String = null,
+      phenotypeFile: String = null,
+      output: String = null,
+      snpRmCols: Array[Int] = null,
+      pheRmCols: Array[Int] = null,
+      t1: Boolean = false, 
+      t2: Boolean = false,
+      significance: Double = 0.05
+      ) 
     
   val defaultParams = Params()
   
-  def Parsing(): Unit = {
-     val parser = new OptionParser[Params]("LinearRegressionExample") {
-      head("LinearRegressionExample: an example Linear Regression with Elastic-Net app.")
-      opt[Double]("regParam")
-        .text(s"regularization parameter, default: ${defaultParams.regParam}")
-        .action((x, c) => c.copy(regParam = x))
-      opt[String]("Unwanted columns")
-        .text(s"Unwanted columns, zero indexed.")
-        .action((x, c) => c.copy(unwantedColumns = x))
-      opt[String]("dataFormat")
-        .text("data format: libsvm (default)")
-        .action((x, c) => c.copy(dataFormat = x))
-      arg[String]("<input>")
-        .text("input path to labeled examples")
-        .required()
-        .action((x, c) => c.copy(input = x))
-      //arg[String]("<>")
-    }
+  def createParser() = {
+       val parser = new OptionParser[Params]("epiquant") {
+      head("EPIQUANT: an statsistical analysis for GWAS data in SPARK/scala.")
+      opt[String]('s', "snpFile")
+        .valueName("<snp file>")
+        .text(s"input path to file with SNP values for individuals")
+        .required
+        .action((x, c) => c.copy(snpFile = x))
+      opt[String]('p', "pheFile")
+        .valueName("<phenotype file>")
+        .text(s"input path to file specifying the phenotypic data for individuals")
+        .required
+        .action((x, c) => c.copy(phenotypeFile = x))
+      opt[String]('o', "outFile")
+        .valueName("<output file>")
+        .text(s"path to output file")
+        .action((x, c) => c.copy(output = x))
+        
+      opt[String]("cols_1").abbr("c1")
+        .valueName("\"1 2 3...\"")
+        .text(s"Unwanted columns in snpFile, zero indexed, separated by space.")
+        .action((x, c) => c.copy(snpRmCols = x.split(" ").map(y => y.toInt))) 
+      opt[String]("cols_2").abbr("c2")
+        .valueName("\"1 2 3...\"")
+        .text(s"Unwanted columns in pheFile, zero indexed, separated by space.")
+        .action((x, c) => c.copy(pheRmCols = x.split(" ").map(y => y.toInt)))
+        
+      opt[Unit]("snpFile transpose")
+        .abbr("t1")
+        .text(s"whether the snpFile data matrix needs transpose. Default: false")
+        .action((x, c) => c.copy(t1 = true))
+      opt[Unit]("pheFile transpose")
+        .abbr("t2")
+        .text(s"whether the pheFile data matrix needs transpose. Default: false")
+        .action( (x, c) => c.copy(t2 = true) )
+      opt[Double]('a', "alpha")
+        .text(s"significance level: a threshold value for p-value test. " +
+            s"Default: 0.05")
+        .action((x, c) => c.copy(significance = x))
+      checkConfig { params =>
+        if (params.significance < 0 || params.significance >= 1) {
+          failure(s"fracTest ${params.significance} value incorrect; should be in [0,1).")
+        } else {
+          success
+        }
+      }
+     }
+     parser 
   }
-  
-  def main(args: Array[String]){
-    Logger.getLogger("org").setLevel(Level.OFF)
-   Logger.getLogger("akka").setLevel(Level.OFF)
-      val spark = org.apache.spark.sql.SparkSession.builder
-      .appName("Parser")
-      //.master("local")
-      .getOrCreate()
-    val a = parser(spark, args)
-      
-  }
-   // solve Ax = b, for x, where A = choleskyMatrix * choleskyMatrix.t
-   // choleskyMatrix should be lower triangular
-   def solve( choleskyMatrix: BDM[Double], b: BDV[Double], x: BDV[Double] )  = {
-      val C = choleskyMatrix
-      val size = C.rows
-      if( C.rows != C.cols ) {
-          // throw exception or something
-      }
-      if( b.length != size ) {
-          // throw exception or something
-      }
-      // first we solve C * y = b
-      // (then we will solve C.t * x = y)
-      val y = BDV.zeros[Double](size)
-      // now we just work our way down from the top of the lower triangular matrix
-      for( i <- 0 until size ) {
-         var sum = 0.0
-         for( j <- 0 until i ) {
-            sum += C(i,j) * y(j)
-         }
-         y(i) = ( b(i) - sum ) / C(i,i)
-      }
-      // now calculate x
-      //val x = BDV.zeros[Double](size)
-      val Ct = C.t
-      // work up from bottom this time
-      for( i <- size -1 to 0 by -1 ) {
-         var sum = 0.0
-         for( j <- i + 1 until size ) {
-            sum += Ct(i,j) * x(j)
-         }
-         x(i) = ( y(i) - sum ) / Ct(i,i)
-      }
-      
-   }
-  def parser(spark: SparkSession, args: Array[String]) = {
-       // val temp = args(0).split(" ")  
+
+   
+  def parse(spark: SparkSession, args: Array[String]) = {
       val snp_f = args(0)
       val phe_f = args(1)
 
@@ -159,16 +146,6 @@ object Parser {
       val data = Source.fromFile(snp_f).getLines().map(_.split("\t")).toArray
       val samples = data(0).drop(5)
       val snp_names = data.drop(1).map(x => x(0))
-      var i = 0
-      //val snp_matrix = new DenseMatrix(snp_names.length, samples.length, data.drop(1).flatMap(x => x.drop(5).map(_.toDouble)))
-      /*val values = spark.sparkContext.parallelize{
-        data.drop(1).map{x => 
-          val ret = IndexedRow(i, Vectors.dense(x.drop(5).map(_.toDouble)))
-          i+=1
-          ret
-        }
-      }*/
-     
 
 //val phe_stream = hdfs.open(phe_path)
 //def readPhe = Stream.cons(phe_stream.readLine, Stream.continually(phe_stream.readLine))
@@ -181,287 +158,58 @@ object Parser {
       val phe_vales_array = phefile.drop(1).map{
         x => x.drop(1).map(_.toDouble)
       }
-      
-      //println(phe_samples.length)
-      //println(phe_names.length)
-      
-      //val phevals = new DenseMatrix(phe_samples.length, phe_names.length, phe_vales, true)
-      //val colIter = phevals.colIter
-      //val PH1 = colIter.next
-      
-      
-     
+
      val snp_darray = data.drop(1).map(x => x.drop(5).map(_.toDouble)).transpose   
 
-     //println("SNP: m", snp_darray.length, "n/D", snp_darray(0).length )
      val stick = for (i <- 0 to snp_darray.length-1) yield {
        (snp_darray(i),phe_vales_array(i))
      }
-     // println("stick: m", stick.length, "n/D", stick(0).length )
       
      val rdd = spark.sparkContext.parallelize(stick)
      val part = rdd.getNumPartitions
-    // println("partition", part)
-      //TODO:
+
      //construct the matrix snp_matrix(i)
      val values = rdd.mapPartitionsWithIndex{
        (indx, x) => {
-          //TODO: val x_duplicate = x.duplicate
          val snp_1 : Array[Array[Double]] = new Array[Array[Double]](samples.length/part+1)
          val phe_2 : Array[Array[Double]] = new Array[Array[Double]](samples.length/part+1)
-        val n = snp_names.length 
-	var num_rows = 0
+         val n = snp_names.length 
+	       var num_rows = 0
          
-	while(x.hasNext){
-	   val temp = x.next
-           snp_1(num_rows) = temp._1
-           phe_2(num_rows) = temp._2
-	   num_rows+=1
-	  }
-         // println("SNP: m", snp_1.length, "n/D", snp_1(0).length )
-         // println("PHE: m", phe_2.length, "n/D", phe_2(0).length , num_rows)
-          
-          //TODO: unnecessary passing of data n . see if can extract from BDM dimension
-      //    println("SNP: m", snp_1.length, "n", snp_names.length)
-        //  println(phe_2.length)
-          //println(num_rows, snp_names.length, phe_names.length)
-         // println("paritition",idx,"num samples",num_rows)
-    
+      	 while(x.hasNext){
+      	     val temp = x.next
+             snp_1(num_rows) = temp._1
+             phe_2(num_rows) = temp._2
+      	     num_rows+=1
+      	  }
+         
+          //TODO: unnecessary reconstruction of phe_matrix. see if can construct in previous loop.
          val snp_matrix = BDM.zeros[Double](num_rows, (n*(n+1)/2))
          val phe_matrix = BDM.zeros[Double](num_rows, phe_names.length)
         
-         val vectors = for (k <- 0 until num_rows) {
-		var c = n
-		for (i <- 0 until n-1) {
-           	   for (j <- i+1 until n) {	
-			snp_matrix(k, c) = snp_1(k)(i) * snp_1(k)(j)
-			c+=1
-		   }
-
+         for (k <- 0 until num_rows) {
+    		    var c = n
+    		    for (i <- 0 until n-1) {
+               	for (j <- i+1 until n) {	
+    			          snp_matrix(k, c) = snp_1(k)(i) * snp_1(k)(j)
+    			          c+=1
+    		        }
            	}
-		for (i <- 0 until phe_names.length) {
-			phe_matrix(k, i) = phe_2(k)(i)
-		}
+        		for (i <- 0 until phe_names.length) {
+        			phe_matrix(k, i) = phe_2(k)(i)
+        		}
         }
-	//vectors.flatten
-//	val a = BDM(vectors.flatten:_*)
-//	println("pairwise dim", a.rows, a.cols)
-        //val a = new BDM[Double](num_rows, (n*(n+1)/2-n), vectors.flatten.toArray)
+         
         Iterator((snp_matrix, phe_matrix, num_rows))
        }   
-     }//.cache()
+     }.persist(storage.StorageLevel.MEMORY_AND_DISK)
      
-    /* Merged with previous map 
-     * val pairwise = values.mapPartitions{
-       x => {
-         //val full = new BDM[Double](num_rows, n*(n+1)/2), full array)
-         val snp_matrix = x.next._1
-         val n = snp_matrix.cols
-         val vectors = for (i <- 0 until n-1) yield {
-           for (j <- i until n) yield{
-             snp_matrix(::, i) dot snp_matrix(::, j)
-           }
-        }
-        val a =  vectors.flatten  
-        val ret = BDM.horzcat(snp_matrix,BDM(a))
-        
-       }
-     }
-     */
+     (values, snp_names, phe_names, samples) 
 
-     
-     var rho = 1.0;
-     val n = snp_names.length
-     val D = n*(n+1)/2
-     val maxIter = 100
-     val lambda = 0.5
-     val absTol = 1e-4
-     val relTol = 1e-2
-      var cholesky_A = values.mapPartitionsWithIndex{
-        (index, iterator) => {
-          var i =0
-        //  println(i)
-          var g = iterator.next
-         // while(iterator.hasNext){
-           // i+=1
-           // println(i) //make sure only 1 matrix per partition
-         // }
-          val snp_matrix = g._1
-          val phe_matrix = g._2
-          val n = g._3 //number of samples in this partition
-         //precompute Atb
-          var rho = 1.0
-          val skinny = (n >=D)
-          //TODO compare with breeze matrix vector multiplication speed
-
-	//println("snp", snp_matrix.rows, snp_matrix.cols, snp_matrix.data.length)         
-          val Atb = snp_matrix.t*phe_matrix(::, 0)//.map(dv => (snp_matrix.t *dv))
-     //   println(Atb.size) 
-          var L =  new BDM(1, 1, Array(0.0))
-          if (skinny){
-            //Compute the matrix A: A = chol(AtA + rho*I) 
-            val AtA = snp_matrix.t * snp_matrix//new DenseMatrix(D, D, Array.fill[Double](D*D)(0))
-            val rhoI = BDM.eye[Double](n)
-            rhoI*=rho
-            L = cholesky(AtA + rhoI)
-          } else{
-            //compute the matrix L : L = chol(I + 1/rho*AAt) 
-            val AAt = snp_matrix * snp_matrix.t
-            AAt *= 1/rho
-            val eye = BDM.eye[Double](n)
-            L = cholesky(AAt+eye)
-          }
-          
-         val x = BDV.zeros[Double](D)
-         
-         val u = BDV.zeros[Double](D)
-         //val y = BDV.zeros[Double](D)
-         //val r = BDV.zeros[Double](D)
-         val zprev = BDV.zeros[Double](D)
-         //val zdiff = BDV.zeros[Double](D)
-         //val q = BDV.zeros[Double](D)
-         //val w = BDV.zeros[Double](D)
-          
-         
-         //TODO find out a way to map Atb
-          Iterator((L, Atb, n, x, u, zprev, snp_matrix))
-        }
-     } 
-     
-     val zprev = BDV.zeros[Double](D)
-     val zdiff = BDV.zeros[Double](D)
-     val z = BDV.zeros[Double](D)
-     var iter = 0  
-     var prires = 0.0
-     var nxstack = 0.0
-     var nystack = 0.0
-     var bc_z = cholesky_A.sparkContext.broadcast(z)
-     val N = 4 //num of partitions
-     
-     val startTime = System.nanoTime()
-     breakable { while(iter < maxIter){
-	//println("-----------------begin while loop-------------")
-        cholesky_A = cholesky_A.mapPartitions{
-          iterator => {
-            //          var i =0
-          //println(i)
-          //var g = iterator.next
-          //while(iterator.hasNext){
-          //  i+=1
-          //  println(i) //make sure only 1 matrix per partition
-         // }
-          val G = iterator.next()
-          
-          val L =G._1
-          val Atb = G._2
-          val m = G._3
-          val x = G._4
-         // val z = G._5
-          val z = bc_z.value
-          val u = G._5
-          val zprev = z.copy
-          val A = G._7 //snp_matrix
-          val skinny = m >= D
-          
-          // u-update: u = u + x - z
-           u+=x
-           u-=z
-          // x-update: x = (A^T A + rho I) \ (A^T b + rho z - y) 
-          val q = z.copy
-          q:-=u
-          q:*=rho
-          q :+=Atb 
-          
-          if(skinny){
-            solve( L, q, x )
-          }else{
-            //val Aq = BDV.zeros[Double](n) // new DenseVector(Array.fill[Double](N)(0))
-            //QuadraticMinimizer.gemv(1, L, q, 0, Aq)
-            val p = BDV.zeros[Double](m)
-            val Aq = A*q
-            solve(L, Aq, p)
-            //BLAS.gemv(1, fromBreeze(A), fromBreeze(q), 0, Aq)
-            //solve(A, asBreeze(Aq), p)
-            //gsl_blas_dgemv(CblasTrans, 1, A, b, 0, Atb); // Atb = A^T b
-            QuadraticMinimizer.gemv(1, A.t, p, 0, x)
-            x:*= -1/(rho*rho)
-            q:*= 1/rho
-            x:+=q  
-          }
-          
-          Iterator((L, Atb, m, x, u, zprev, A))
-        }
-          
-      }//end MapPartition
-          
-        
-        /*
-		 		 * Message-passing: compute the global sum over all processors of the
-		 		 * contents of w and t. Also, update z.
-		 		 */
-        
-        val recv = cholesky_A.map{
-          A =>{
-              val x = A._4
-              val z = bc_z.value
-              val u = A._5
-              
-              val r = x-z
-		val r_sq = r.data.map(x => x*x).reduce(_+_)
-              val x_sq = x.data.map(x => x*x).reduce(_+_)
-              val u_sq = (u.data.map(x => x*x).reduce(_+_))/(rho*rho)
-              
-            Array(r_sq, x_sq, u_sq)
-          }
-        }.treeReduce((x, y)=> Array(x(0)+y(0), x(1)+y(1), x(2)+y(2)), 2)
-
-        val new_z = cholesky_A.map{
-          A => {
-              val x = A._4
-              val u = A._6
-              x + u
-          }
-        }.treeReduce(_+_, 2)
-        
-        zprev := bc_z.value
-        z := BDV(soft_threshold(new_z*(1.0/N), lambda/(N*rho)))
-        bc_z = cholesky_A.sparkContext.broadcast(z)
- 
-        
-            prires  = sqrt(recv(0))  /* sqrt(sum ||r_i||_2^2) */
-    		    nxstack = sqrt(recv(1))  /* sqrt(sum ||x_i||_2^2) */
-     		    nystack = sqrt(recv(2))  /* sqrt(sum ||y_i||_2^2) */
-     
-        zdiff := z-zprev
- 		   val dualres = sqrt(N)*rho * norm(zdiff)
- 		   
- 		   //primal and dual feasibility tolerance
- 		   val eps_pri = sqrt(D*N)*absTol + relTol * max(nxstack, sqrt(N)*norm(z))
- 		   val eps_dual = sqrt(D*N)*absTol + relTol * nystack
-
- 		   if (prires <= eps_pri && dualres <= eps_dual) {
-     		 break
-    	 }
-     	 iter+=1
-     }//end while
-    }//end breakable 
-     val elapsedTime = (System.nanoTime() - startTime) / 1e9
-     
-     println(s"Training time: $elapsedTime seconds")
-     z.data.foreach(println)
-	spark.stop()
-    		  
-  } //end parser
+  } 
  
 
-  def soft_threshold(v: BDV[Double], k: Double) = {
-    v.data.map{ vi => {
-        if(vi > k) vi-k
-        else if (vi < -k) vi+k 
-        else 0 }
-    }
-  } //end soft_threshold
-  
+
   def CreateDataframe(spark: SparkSession, file: String, t: Boolean, rmCols: Array[Int]): DataFrame ={
 
     val fileRDD = spark.sparkContext.textFile(file); 

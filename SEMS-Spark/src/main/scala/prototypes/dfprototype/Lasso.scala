@@ -11,12 +11,12 @@ import org.apache.spark.ml.regression._
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.feature.Interaction
 import org.apache.spark.ml.feature.VectorSlicer
-import scala.collection.mutable.HashSet
+
 import org.apache.spark.sql.functions._
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
 import org.apache.spark.ml.feature.ElementwiseProduct
-import scala.collection.mutable.BitSet
+
 import scala.Option
 import prototypes.dfprototype.Parser
 import org.apache.spark.ml.linalg.{ DenseVector, DenseMatrix, Vector, Vectors}
@@ -24,8 +24,6 @@ import breeze.linalg.{ *, DenseMatrix => BDM }
 import org.apache.spark.mllib.linalg.BLAS
 import scala.annotation.tailrec
 import org.apache.spark.rdd.RDD
-import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
-
 
 
 import org.apache.spark.ml.feature.SQLTransformer
@@ -40,30 +38,7 @@ class entry {
 
 
 object Lasso {
-   // val mySites: List[AdditiveSite] = 0
-   // val myModel: List[ModelEffect] = null
-    case class Params(
-      snpFile: String = null,
-      phenotypeFile: String = null,
-      output: String = null,
-      snpRmCols: Array[Int] = null,
-      pheRmCols: Array[Int] = null,
-      t1: Boolean = false, 
-      t2: Boolean = false,
-      significance: Double = 0.05
-      ) 
     
-  val defaultParams = Params()
-  
-    case class RegressData(
-      val Untested: Array[String] = null,
-      //val untested: BitSet,
-      //val skipped: BitSet = BitSet(),
-      //var Included: Vector[String] = null,
-      //var Skipped: Vector[String] = null,
-      var df: DataFrame = null
-    )
- 
   
 /*  def filterColumn(arr: Vector[String], cols: Array[Int]): Vector[String] = {
     val zipped = arr.zipWithIndex
@@ -73,64 +48,10 @@ object Lasso {
   
   def main(args: Array[String]){
 
-Logger.getLogger("org").setLevel(Level.OFF)
-Logger.getLogger("akka").setLevel(Level.OFF)
-
-run(args)
-  /*    val parser = new OptionParser[Params]("epiquant") {
-      head("EPIQUANT: an statsistical analysis for GWAS data in SPARK/scala.")
-      opt[String]('s', "snpFile")
-        .valueName("<snp file>")
-        .text(s"input path to file with SNP values for individuals")
-        .required
-        .action((x, c) => c.copy(snpFile = x))
-      opt[String]('p', "pheFile")
-        .valueName("<phenotype file>")
-        .text(s"input path to file specifying the phenotypic data for individuals")
-        .required
-        .action((x, c) => c.copy(phenotypeFile = x))
-      opt[String]('o', "outFile")
-        .valueName("<output file>")
-        .text(s"path to output file")
-        .action((x, c) => c.copy(output = x))
-        
-      opt[String]("cols_1").abbr("c1")
-        .valueName("\"1 2 3...\"")
-        .text(s"Unwanted columns in snpFile, zero indexed, separated by space.")
-        .action((x, c) => c.copy(snpRmCols = x.split(" ").map(y => y.toInt))) 
-      opt[String]("cols_2").abbr("c2")
-        .valueName("\"1 2 3...\"")
-        .text(s"Unwanted columns in pheFile, zero indexed, separated by space.")
-        .action((x, c) => c.copy(pheRmCols = x.split(" ").map(y => y.toInt)))
-        
-      opt[Unit]("snpFile transpose")
-        .abbr("t1")
-        .text(s"whether the snpFile data matrix needs transpose. Default: false")
-        .action((x, c) => c.copy(t1 = true))
-      opt[Unit]("pheFile transpose")
-        .abbr("t2")
-        .text(s"whether the pheFile data matrix needs transpose. Default: false")
-        .action( (x, c) => c.copy(t2 = true) )
-      opt[Double]('a', "alpha")
-        .text(s"significance level: a threshold value for p-value test. " +
-            s"Default: 0.05")
-        .action((x, c) => c.copy(significance = x))
-      checkConfig { params =>
-        if (params.significance < 0 || params.significance >= 1) {
-          failure(s"fracTest ${params.significance} value incorrect; should be in [0,1).")
-        } else {
-          success
-        }
-      }
-     }
-      
-      
-    parser.parse(args, defaultParams) match {
-      case Some(params) => run(params)
-      case _ => sys.exit(1)
-    }
-    
-    */
+  Logger.getLogger("org").setLevel(Level.OFF)
+  Logger.getLogger("akka").setLevel(Level.OFF)
+  
+  run(args)
     
   }
   
@@ -165,13 +86,7 @@ run(args)
       val df1 = LassoRegression("Samples", pairwiseSnp, onephe, "Trait1", 0.00001)
       val df2 = LassoRegression("Samples", pairwiseSnp, onephe, "Trait1", 0.001)
       val df3 = LassoRegression("Samples", pairwiseSnp, onephe, "Trait1", 0.01)
-      spark.stop()*/
-      
-      val denseRDD = Parser.parser(spark, args)
-      val initialWeights = 0
-        
-
-      
+      spark.stop()*/ 
     //  val a  = optimize(denseRDD, )
       
   }
@@ -284,7 +199,7 @@ run(args)
      df
   }
   
-  def CreateDataframe(spark: SparkSession, file: String, t: Boolean, rmCols: Array[Int]): RegressData ={
+  def CreateDataframe(spark: SparkSession, file: String, t: Boolean, rmCols: Array[Int])={
 
 
 val rdd = spark.sparkContext.parallelize(Seq(Seq(1, 2, 3), Seq(4, 5, 6), Seq(7, 8, 9)))
@@ -355,88 +270,12 @@ val transposed = byColumn.map {
     val schema = StructType(header
       .map(fieldName => StructField(fieldName, if(fieldName == header(0)) StringType else DoubleType, nullable = false)))
    
-    RegressData(df=spark.createDataFrame(rowRDD, schema), Untested = header.drop(1))
+      spark.createDataFrame(rowRDD, schema)
+    //RegressData(df=spark.createDataFrame(rowRDD, schema), Untested = header.drop(1))
   }
 }
 
-class CoordinateDescent{
-  /* dataset: RDD of y and X
-   * n: number of samples
-   * d: dimensionality, or number of SNPs
-   * lambda: regParam
-   * tol: convergence tolerence level
-   */
-  def fit(X:RDD[IndexedRow], y: DenseVector,  n: Int, d: Int, lambda: Double, tol: Double, maxIter: Int) = {
-     val w = Array.fill[Double](d)(0); //Initialize array of 0 of size d for coefficients. 
-     var prires: Double = 0; //primal residual
-     var iter = 0
-     val z = X.context.broadcast(y)
-     def layout(x: Double) = n + d +x
-     while (iter < maxIter){
-       val a = X.mapPartitionsWithIndex{
-         (index, iterator) => {
-           val y = z.value
-           //iterator
-           println("index", index)
-           //val x = new DenseVector(Array(0.0,0.0))
-           //val g = BLAS.gemv(1.0, A, x, 1.0, y)
-            while (iterator.hasNext) 
-              println(iterator.next())
-            Iterator(Int)
-           }
-       }
-         iter+=1    
-     }
-    
-  }
-  
-  
-  def soft_threshold(v: Array[Double], j: Int, lambda: Double, rho: Double) = {
-     if (rho > lambda/2){
-       v(j) = (rho-lambda/2)
-     }
-     else if (rho < -lambda/2){
-       v(j) = (rho+lambda/2)
-     }
-     else v(j) =0
-  }
-  
-  
-  
-}
 
 
-/*val coder = (arg: Vector[Double]) => {
-    arg.filterNot( x => arg.indexOf(x) % arg.length == 0)
-  }
-  val coder1: (Double => Double) = (arg: Double) => arg+1.0
-val sqlfunc = udf(coder1)
-val sqlfunc2 = udf(coder)
 
-val gg = col("id1")
-
-val c = interacted.withColumn("Code", sqlfunc(col("id1")))
-c.show(truncate = false)
-*/
-
-/*Iterator.continually{   if(count>= n-ceng)  {
-    count+=(2+ceng)
-    ceng+=1
-  }; count }.takeWhile(count => count < (n*n))*/
-  
-
-/*val a = for (r <- 0 until n) yield { // each row
-  for (c <- r until n) yield {
-    val i = (n * r) + c - ((r * (r+1)) / 2); // corrected from earlier post
-    i
-  }
-}
-  val g =a.flatMap { x => x }
- a.foreach(x => x.foreach(println))
- g.foreach(println)*/
-
-// def coder(myAmt:Double):String = {
-  //if (myAmt > 100) "Little"
- // else "Big"
- //}
  
