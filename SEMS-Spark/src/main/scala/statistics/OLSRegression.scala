@@ -11,9 +11,6 @@ class OLSRegression(val xColumnNames: Array[String],
   // Good summary of formula's used
   // http://www.stat.ucla.edu/~nchristo/introeconometrics/introecon_matrixform.pdf
 
-  xColumnNames.foreach(x => println("X cols: " + x))
-  xColumnNames.distinct.foreach(x => println("dist: " + x))
-  
   private[this] val yAsBreezeVector = DenseVector(Y.toArray)
   
   // To estimate the intercept, a column of 1's is added to the matrix in the last position
@@ -32,27 +29,6 @@ class OLSRegression(val xColumnNames: Array[String],
 
   private[this] val transposedX = XsWithZeroColumn.t
   
- // println("xColumn name length: " + xColumnNames.length)
-  //xColumnNames.foreach(x => print(x + ", "))
-  //println()
-  /*
-  println("\n\n\n\n\n\n\n\n\n\n\n")
-  for (row <- 0 until XsWithZeroColumn.rows) {
-    for (col <- 0 until XsWithZeroColumn.cols) {
-      print(XsWithZeroColumn(row, col) + ", ")
-    }
-    println
-  }
-  
-  val a = transposedX * XsWithZeroColumn
-  
-  println("\n\n\n\n\n\n\n\n\n\n\n")
-  for (row <- 0 until a.rows) {
-    for (col <- 0 until a.cols) {
-      print(a(row, col) + ", ")
-    }
-    println
-  }*/
   private[this] val inverseOfXtimesXt = inv(transposedX * XsWithZeroColumn)
 
   /** The estimates of the coefficients; the last entry is the estimate of the intercept */
