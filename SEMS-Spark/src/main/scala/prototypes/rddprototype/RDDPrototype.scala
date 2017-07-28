@@ -22,12 +22,6 @@ object RDDPrototype {
 
   var threshold = 0.05
 
-  /** Reads in a <delimiter> separated file, and returns a new 2D Vector of its contents */
-  /*def readFile(filePath: String, delimiter: String): Table = {
-    val buffSource = Source.fromFile(filePath)
-    return new Table(buffSource.getLines.toVector.map(_.split(delimiter).toVector))
-  }*/
-
   /** Reads in a file from HDFS converted previously with the ConvertFormat tool */
   def readHDFSFile(filePath: String, spark: SparkContext): FileData = {
     val splitLines = spark.textFile(filePath).map(_.split("\t").toVector)
@@ -88,7 +82,6 @@ object RDDPrototype {
     iterations += 1
     println("Iteration number: " + iterations.toString)
     
-    //
     /*
      * LOCAL FUNCTIONS
      */
@@ -247,108 +240,6 @@ object RDDPrototype {
       } else {
         addedPrevBroadcast.destroy()
         performSteps(spark, snpDataRDD, broadcastPhenotypes, phenotypeName, new_collections, bestRegression)
-      }
-    }
-  }
-
-  @tailrec
-  def performSteps1(spark: SparkContext,
-    snpDataRDD: rdd.RDD[(String, Vector[Double])],
-    broadcastPhenotypes: Broadcast[Map[String, Vector[Double]]],
-    phenotypeName: String,
-    collections: StepCollections,
-    prev_best_model: OLSRegression = null): OLSRegression = {
-    val getNewestTermsPValue = (reg: OLSRegression) => {
-      // Drop the estimate of the intercept and return the p-value of the most recently added term 
-      reg.pValues.toArray.dropRight(1).last
-    }
-
-    val getNewestTermsName = (reg: OLSRegression) => {
-      reg.xColumnNames.last
-    }
-
-    def mapFunction(inputSnp: (String, Vector[Double]),
-      addedPrevBroadcast: Broadcast[Map[String, Vector[Double]]]): Option[OLSRegression] = {
-
-      if (!collections.added_prev.contains(inputSnp._1) &&
-        !collections.skipped.contains(inputSnp._1)) {
-        val yVals = broadcastPhenotypes.value(phenotypeName)
-
-        val xColNames = collections.added_prev.toArray
-        val xVals = xColNames.map(addedPrevBroadcast.value(_)).toVector
-
-        val newXColNames = xColNames :+ inputSnp._1
-        val newXVals = xVals :+ inputSnp._2
-
-        return Some(new OLSRegression(newXColNames, phenotypeName, newXVals, yVals))
-      } else {
-        return None
-      }
-    }
-
-    def reduceFunction(inputRDD: rdd.RDD[Option[OLSRegression]]): OLSRegression = {
-      val filtered = inputRDD.filter(x => !x.isEmpty).map(_.get)
-      if (!filtered.isEmpty()) {
-        filtered.reduce((x, y) => {
-          if (getNewestTermsPValue(x) <= getNewestTermsPValue(y)) x else y
-        })
-      } else {
-
-        throw new Exception("There are no more SNPs under consideration")
-      }
-    }
-
-    val addedPrevValMap = collections.added_prev.toArray
-      .map(name => (name, snpDataRDD.lookup(name).flatten.toVector))
-      .toMap
-
-    val addedPrevBroadcast = spark.broadcast(addedPrevValMap)
-
-    val mappedValues = snpDataRDD.map(x => mapFunction(x, addedPrevBroadcast))
-    val bestRegression = reduceFunction(mappedValues)
-
-    if (getNewestTermsPValue(bestRegression) >= threshold) {
-      if (prev_best_model != null) {
-        return prev_best_model
-      } else {
-        addedPrevBroadcast.destroy()
-        throw new Exception("No terms could be added to the model at a cutoff of " + threshold)
-      }
-    } else {
-      val new_collections = collections.copy()
-
-      new_collections.skipped.foreach(x => {
-        new_collections.skipped.remove(x)
-        new_collections.not_added.add(x)
-      })
-
-      new_collections.not_added.remove(getNewestTermsName(bestRegression))
-      new_collections.added_prev.add(getNewestTermsName(bestRegression))
-
-      val namePValuePairs = bestRegression.xColumnNames.zip(bestRegression.pValues)
-      namePValuePairs.foreach(pair => {
-        if (pair._2 >= threshold) {
-          // Remove this term from the prev_added collection, and move it to the skipped category
-          new_collections.added_prev.remove(pair._1)
-          new_collections.skipped.add(pair._1)
-        }
-      })
-
-      if (new_collections.not_added.size == 0) {
-        if (new_collections.skipped.size == 0) return bestRegression
-        else {
-          val xColNames = new_collections.added_prev.toArray
-
-          val xVals = xColNames.map(addedPrevBroadcast.value(_)).toVector :+ bestRegression.lastXColumnsValues
-
-          val yVals = broadcastPhenotypes.value(phenotypeName)
-
-          addedPrevBroadcast.destroy()
-          return new OLSRegression(xColNames, phenotypeName, xVals, yVals)
-        }
-      } else {
-        addedPrevBroadcast.destroy()
-        performSteps1(spark, snpDataRDD, broadcastPhenotypes, phenotypeName, new_collections, bestRegression)
       }
     }
   }
