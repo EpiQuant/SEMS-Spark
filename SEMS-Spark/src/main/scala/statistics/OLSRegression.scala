@@ -33,7 +33,7 @@ class OLSRegression(val xColumnNames: Array[String],
 
   /** The estimates of the coefficients; the last entry is the estimate of the intercept */
   val coefficients = (inverseOfXtimesXt * transposedX * yAsBreezeVector).toArray
-  
+    
   /** 
    *  Predicted Y values, also known as Y_hat
    *  
@@ -66,13 +66,13 @@ class OLSRegression(val xColumnNames: Array[String],
   lazy val pValueMap = (xColumnNames :+ "intercept").zip(pValues).toMap
   
   lazy val lastXColumnsValues = {
-    // Last column position (the very last position is the 1's column used to estimate the intercept)
-    val pos = k - 1
+    // Last column position (the very last position (k - 1) is the 1's column used to estimate the intercept)
+    val pos = k - 2
     (0 until N).map(XsWithZeroColumn(_, pos)).toVector
   }
-
-  /** Prints a summary of the regression, in a format similar to R's summary */
-  def printSummary {
+  
+  /** A summary of the regression stored as a single string ('\n' are included) */
+  lazy val summaryString = {
     
     def standardizeLengths(arr: Array[String], rightPadding: Boolean = false) = {
       val maxLength = arr.map(_.length).max
@@ -80,24 +80,28 @@ class OLSRegression(val xColumnNames: Array[String],
       val padLeft = (j: String) => " " * (maxLength + 3 - j.length) + j
       if (rightPadding) arr.map(padRight) else arr.map(padLeft)
     }
-
-    println("Y is " + yColumnName + "\n")
     
     val names = "Name" +: xColumnNames :+ "(Intercept)"
+          
     // The formatting below chops each double to show only a few decimal places
     val estimate = "Estimate" +: coefficients.map(x => f"$x%.6f".toString)
     val stdErr = "Std. Error" +: standardErrors.map(x => f"$x%.6f".toString)
     val tStat = "t value" +: tStatistics.toArray.map(x => f"$x%.3f".toString)
     val pValue = "Pr(>|t|)" +: pValues.toArray.map(x => f"$x%.6f".toString)
     
-    val cols = Array(standardizeLengths(names, rightPadding = true),
-                     standardizeLengths(estimate),
-                     standardizeLengths(stdErr),
-                     standardizeLengths(tStat),
-                     standardizeLengths(pValue)
-                    )
-                     
-    val printRow = (row: Array[String]) => (row :+ "\n").foreach(print)
-    cols.transpose.foreach(printRow)
+    val nameCol = standardizeLengths(names, rightPadding = true)
+    val cols = nameCol +: Array(estimate, stdErr, tStat, pValue).map(standardizeLengths(_))
+        
+    val joinRow = (row: Array[String]) => (row :+ "\n").mkString
+    val finalRows = cols.transpose.map(joinRow)
+    val firstLine = "The Response variable: " + yColumnName + "\n\n"
+    
+    (firstLine +: finalRows).mkString("")
+    
+  }
+
+  /** Prints a summary of the regression, in a format similar to R's summary */
+  def printSummary {
+    println(summaryString)
   }
 }
