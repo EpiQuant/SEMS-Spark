@@ -9,6 +9,17 @@ import org.apache.spark.broadcast._
 import converters.Table
 import java.io.File
 
+/*
+ * 
+ * 
+ * Having a different threshold for the forward and backward steps can lead to oscillations
+ *   where an X is included under high p-value, then skipped, then included again, ... and this goes on forever 
+ * 
+ * 
+ * 
+ */
+
+
 case class StepCollections(not_added: HashSet[String],
                            added_prev: HashSet[String] = HashSet(),
                            skipped: HashSet[String] = HashSet())
@@ -78,7 +89,7 @@ object RDDPrototype {
                    iterations: Int = 1
                   ): OLSRegression = {
     println("Iteration number: " + iterations.toString)
-    
+
     /*
      *  LOCAL FUNCTIONS
      */
@@ -316,6 +327,10 @@ object RDDPrototype {
     }
     
     val totalEndTime = System.nanoTime()
-    println("\nTotal runtime (seconds): " + ((totalEndTime - totalStartTime) / 1e9).toString)
+    val totalTimeString = "\nTotal runtime (seconds): " + ((totalEndTime - totalStartTime) / 1e9).toString
+    println(totalTimeString)
+    
+    spark.sparkContext.parallelize(List(totalTimeString), 1)
+                        .saveAsTextFile(outputFileDirectory + "/total_time.log")
   }
 }

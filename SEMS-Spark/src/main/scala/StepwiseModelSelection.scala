@@ -64,8 +64,9 @@ object StepwiseModelSelection {
       // If there is a valid set of arguments presented
       case Some(config) => {
 
-         //val spark = SparkSession.builder.appName("SEMS").getOrCreate()
-        val spark = SparkSession.builder.appName("SEMS").master("local").getOrCreate()
+        val spark = SparkSession.builder.appName("SEMS").getOrCreate()
+        //val spark = SparkSession.builder.appName("SEMS").master("local").getOrCreate()
+        //spark.sparkContext.setLogLevel("WARN")
         
         RDDPrototype.performSEMS(spark,
                                  parsed.get.genotypeInput,
