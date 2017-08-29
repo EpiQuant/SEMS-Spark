@@ -1,6 +1,9 @@
 package statistics
 
-import breeze.linalg._
+import breeze.linalg.inv
+import breeze.linalg.DenseVector
+import breeze.linalg.DenseMatrix
+import breeze.linalg.diag
 import breeze.stats.distributions.StudentsT
 
 class OLSRegression(val xColumnNames: Array[String],
