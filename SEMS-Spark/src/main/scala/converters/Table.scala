@@ -11,6 +11,12 @@ class Table(val table: Vector[Vector[Any]]) {
     new Table(table.transpose)
   }
   
+  def replaceTopLeftEntry: Table = {
+    val firstLine = "HeaderLine" +: table(0).drop(1)
+    val otherLines = table.drop(1)
+    new Table(firstLine +: otherLines)
+  }
+  
   private val rowToString = (input: Vector[Any]) => {
     var string = ""
     for (i <- 0 until input.length - 1) {

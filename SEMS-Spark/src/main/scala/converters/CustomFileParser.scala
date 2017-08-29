@@ -17,6 +17,6 @@ class CustomFileParser(filePath: File,
   }
   
   def saveParsedFile(outputPath: File) = {
-    convertedTable.saveTableAsTSV(outputPath)
+    convertedTable.replaceTopLeftEntry.saveTableAsTSV(outputPath)
   }
 }

@@ -99,7 +99,6 @@ object ConvertFormat {
         parser.saveParsedFile(parsed.get.output)
         println("Conversion successful: new file can be found at: " + parsed.get.output.getAbsolutePath.toString)
         
-        argParser.showUsage()
       }
     }
   }
